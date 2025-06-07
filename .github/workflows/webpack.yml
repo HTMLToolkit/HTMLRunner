@@ -28,7 +28,7 @@ jobs:
         cd Build
         npm install
 
-    - name: Build project
+    - name: Run build script
       run: |
-        chmod +x ./Buildscripts/build.sh
-        ./Buildscripts/build-all.sh
+        chmod +x Build/Buildscripts/build-all.sh
+        ./Build/Buildscripts/build-all.sh
