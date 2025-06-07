@@ -59,30 +59,6 @@ Visit the live version at: [https://nellowtcs.github.io/HTMLRunner/](https://nel
 
 ### Single File
 Due to the Webpack build being rather large, I recommend using the website, but you do you :D. </br>
-However, formatting your code isn't working in the Web Version currently.
-
-### Local Installation
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/NellowTCS/HTMLRunner.git
-   cd HTMLRunner/Build
-   ```
-
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
-
-3. **Build the project**
-   ```bash
-   npm run build
-   ```
-
-3. **Or Build and auto serve locally**
-   ```bash
-   npm start
-   ```
 
 ## Usage
 
@@ -96,7 +72,7 @@ However, formatting your code isn't working in the Web Version currently.
 
 ### Keyboard Shortcuts
 - `Ctrl/Cmd + Enter` - Run code
-- `Ctrl/Cmd + F` - Format current editor
+- `Ctrl/Cmd + F` and `Ctrl/Cmd + H` - Find or Replace code
 - `Ctrl/Cmd + /` - Toggle comment
 - `Tab` / `Shift + Tab` - Indent / Unindent
 
@@ -163,24 +139,30 @@ function testFunction() {
 ## 🔧 Development
 
 ### Prerequisites
-- Node.js (v14 or higher)
+- Node.js (v18 or higher)
 - npm or yarn
 
-### Development Setup
-```bash
-git clone https://github.com/NellowTCS/HTMLRunner.git
+### Local Installation and/or Development Setup
+(this is if you want to install locally but not use the single file version, or if you want to contribute.)
 
-cd HTMLRunner/Build
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/NellowTCS/HTMLRunner.git
+   cd HTMLRunner/Build
+   ```
 
-# Install dependencies
-npm install
-
-# Build for production
-npm run build
-
-# Test
-npm test [ Your Tests ]
-```
+2. **Build**
+   ```
+   ./build.sh
+   ```
+   or (if you also want to build the single file version)
+   ```
+   ./build-all.sh
+   ```
+3. **Or Build and auto serve locally**
+   ```bash
+   npm start
+   ```
 
 ### Contributing
 1. Fork the repository
