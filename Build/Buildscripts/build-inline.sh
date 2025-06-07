@@ -1,6 +1,11 @@
 #!/bin/bash
+set -euo pipefail
+
 echo "Starting inlining process..."
-DIST_DIR="../dist"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DIST_DIR="$SCRIPT_DIR/../dist"
+
 HTML_FILE="$DIST_DIR/index.html"
 CSS_FILE="$DIST_DIR/styles.css"
 JS_FILE="$DIST_DIR/main.js"
@@ -19,42 +24,44 @@ cp "$HTML_FILE" "$OUTPUT_FILE"
 INDENTED_CSS=$(sed 's/^/  /' "$CSS_FILE")
 INDENTED_JS=$(sed 's/^/  /' "$JS_FILE")
 
-# Step 3: Replace <link> and <script> tags with placeholders (only those marked for inlining)
+# Step 3: Replace <link> and <script> tags with placeholders
 sed -i.bak 's|<link[^>]*data-inline="true"[^>]*href="styles\.css"[^>]*>|@@INLINE_CSS@@|g' "$OUTPUT_FILE"
 sed -i.bak "s|<link[^>]*data-inline=\"true\"[^>]*href='styles\.css'[^>]*>|@@INLINE_CSS@@|g" "$OUTPUT_FILE"
 sed -i.bak 's|<script[^>]*data-inline="true"[^>]*src="main\.js"[^>]*></script>|@@INLINE_JS@@|g' "$OUTPUT_FILE"
 sed -i.bak "s|<script[^>]*data-inline=\"true\"[^>]*src='main\.js'[^>]*></script>|@@INLINE_JS@@|g" "$OUTPUT_FILE"
 
-# Step 4: Write the indented CSS and JS to temporary files
-echo "  <style>" > /tmp/inlined_css
-echo "$INDENTED_CSS" >> /tmp/inlined_css
-echo "  </style>" >> /tmp/inlined_css
+# Step 4: Write indented CSS and JS to temporary files
+INLINE_CSS_FILE=$(mktemp)
+INLINE_JS_FILE=$(mktemp)
 
-echo "  <script>" > /tmp/inlined_js
-echo "$INDENTED_JS" >> /tmp/inlined_js
-echo "  </script>" >> /tmp/inlined_js
+{
+  echo "  <style>"
+  echo "$INDENTED_CSS"
+  echo "  </style>"
+} > "$INLINE_CSS_FILE"
 
-# Step 5: Replace placeholders with actual content
-# Use a different approach for multiline replacement
-awk '
+{
+  echo "  <script>"
+  echo "$INDENTED_JS"
+  echo "  </script>"
+} > "$INLINE_JS_FILE"
+
+# Step 5: Replace placeholders with inline content
+awk -v css="$INLINE_CSS_FILE" -v js="$INLINE_JS_FILE" '
 /@@INLINE_CSS@@/ {
-    while ((getline line < "/tmp/inlined_css") > 0) {
-        print line
-    }
-    close("/tmp/inlined_css")
+    while ((getline line < css) > 0) print line
+    close(css)
     next
 }
 /@@INLINE_JS@@/ {
-    while ((getline line < "/tmp/inlined_js") > 0) {
-        print line
-    }
-    close("/tmp/inlined_js")
+    while ((getline line < js) > 0) print line
+    close(js)
     next
 }
 { print }
 ' "$OUTPUT_FILE" > "$OUTPUT_FILE.tmp" && mv "$OUTPUT_FILE.tmp" "$OUTPUT_FILE"
 
-# Clean up temporary files and backup
-rm -f /tmp/inlined_css /tmp/inlined_js "$OUTPUT_FILE.bak"
+# Clean up
+rm -f "$INLINE_CSS_FILE" "$INLINE_JS_FILE" "$OUTPUT_FILE.bak"
 
 echo "Inlined output written to $OUTPUT_FILE"
