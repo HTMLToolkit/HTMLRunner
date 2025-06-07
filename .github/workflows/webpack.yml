@@ -15,14 +15,20 @@ jobs:
         node-version: [18.x, 20.x, 22.x]
 
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
 
     - name: Use Node.js ${{ matrix.node-version }}
       uses: actions/setup-node@v4
       with:
         node-version: ${{ matrix.node-version }}
 
-    - name: Build
+    - name: Install dependencies
       run: |
-        cd Build/Buildscripts
-        ./build-all.sh
+        cd Build
+        npm install
+
+    - name: Build project
+      run: |
+        chmod +x ./Buildscripts/build.sh
+        ./Buildscripts/build-all.sh
