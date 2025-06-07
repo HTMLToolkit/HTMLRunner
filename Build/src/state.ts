@@ -95,12 +95,12 @@ export function resetCode(skipConfirmation: boolean = false): void {
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<script src="main.js"></script>
+<script src="main.js"><\/script>
 <h1>Hello, HTMLRunner!</h1>
 <p>This is a demo page.</p>
 <button onclick="testFunction()">Click me!</button>
-</body>
-</html>`,
+<\/body>
+<\/html>`,
       },
     });
 
