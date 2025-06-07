@@ -24,6 +24,5 @@ jobs:
 
     - name: Build
       run: |
-        cd Build
-        npm install
-        npx webpack
+        cd Build/Buildscripts
+        ./build-all.sh
