@@ -55,6 +55,12 @@ function createEditorConfig(
         language,
         themeCompartment.of(isDarkMode ? monokai : bbedit),
         EditorView.lineWrapping,
+        EditorState.tabSize.of(2),
+        EditorView.theme({
+          "&": { height: "100%" },
+          ".cm-scroller": { overflow: "auto" },
+          ".cm-content": { minHeight: "100%" }
+        }),
         search(),
         linter(
           (view) => {

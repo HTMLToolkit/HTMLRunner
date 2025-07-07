@@ -34,6 +34,8 @@ export function showError(message: string): void {
 
 export function switchTab(tab: string): void {
   currentTab = tab;
+
+  // Hide all editor containers
   document.querySelectorAll(".editor-container").forEach((c) => {
     const container = c as HTMLElement;
     container.style.display = "none";
@@ -49,11 +51,19 @@ export function switchTab(tab: string): void {
     return;
   }
 
+  // Remove 'active' class from all tabs
+  document
+    .querySelectorAll(".editor-tabs .tab")
+    .forEach((t) => t.classList.remove("active"));
+
+  // Show the selected container and mark tab as active
   editorContainer.style.display = "block";
   tabElement.classList.add("active");
+
   editors[tab].view.focus();
   saveState();
 }
+
 
 export function switchOutput(output: string): void {
   currentOutput = output;

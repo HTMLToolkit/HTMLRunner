@@ -306,13 +306,35 @@ function toggleDarkMode(): void {
 
 // Export editors' content as ZIP
 async function exportAsZip() {
+  const html = editors.html.view.state.doc.toString().trim();
+  const css = editors.css.view.state.doc.toString().trim();
+  const js = editors.js.view.state.doc.toString().trim();
+
+  const files: { name: string; content: string }[] = [];
+  if (html) files.push({ name: "index.html", content: html });
+  if (css) files.push({ name: "styles.css", content: css });
+  if (js) files.push({ name: "script.js", content: js });
+
+  if (files.length === 0) {
+    alert("Nothing to export!");
+    return;
+  }
+
+  if (files.length === 1) {
+    const blob = new Blob([files[0].content], { type: "text/plain" });
+    saveAs(blob, files[0].name);
+    return;
+  }
+
   const zip = new JSZip();
-  zip.file("index.html", editors.html.view.state.doc.toString());
-  zip.file("styles.css", editors.css.view.state.doc.toString());
-  zip.file("script.js", editors.js.view.state.doc.toString());
+  for (const file of files) {
+    zip.file(file.name, file.content);
+  }
+
   const content = await zip.generateAsync({ type: "blob" });
   saveAs(content, "htmlrunner-export.zip");
 }
+
 
 // Copy console content
 function copyAllConsole(): void {
