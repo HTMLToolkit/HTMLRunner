@@ -1,10 +1,10 @@
 # HTMLRunner
 
-![GitHub License](https://img.shields.io/github/license/NellowTCS/HTMLRunner)
+![GitHub License](https://img.shields.io/github/license/HTMLToolkit/HTMLRunner)
 [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![HTML5](https://img.shields.io/badge/HTML5-E34F26?logo=html5&logoColor=white)](https://developer.mozilla.org/en-US/docs/Web/HTML)
 [![CSS3](https://img.shields.io/badge/CSS3-1572B6?logo=css3&logoColor=white)](https://developer.mozilla.org/en-US/docs/Web/CSS)
-![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/NellowTCS/HTMLRunner/webpack.yml)
+![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/HTMLToolkit/HTMLRunner/webpack.yml)
 
 A powerful, browser-based HTML/CSS/JavaScript code editor and live preview tool. Write, test, and debug your web code with real-time execution and an integrated console.
 
