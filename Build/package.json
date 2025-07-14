@@ -23,7 +23,7 @@
     "@codemirror/lint": "^6.8.5",
     "@codemirror/state": "^6.5.2",
     "@codemirror/view": "^6.38.0",
-    "@prettier/plugin-xml": "^3.4.1",
+    "@prettier/plugin-xml": "^3.4.2",
     "@types/codemirror": "^5.60.16",
     "@uiw/codemirror-theme-bbedit": "^4.24.1",
     "@uiw/codemirror-theme-monokai": "^4.24.1",
