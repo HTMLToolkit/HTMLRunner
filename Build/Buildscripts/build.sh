@@ -4,7 +4,9 @@ set -e
 echo "Building HTMLRunner"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"  # now inside /Build
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"  # one level up to /Build
+
+cd "$ROOT_DIR"
 
 npm install
 npm run build
