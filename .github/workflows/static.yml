@@ -31,36 +31,3 @@ jobs:
         with:
           branch: gh-pages
           folder: Build/dist
-# .github/workflows/static.yml
-name: Deploy to GitHub Pages
-
-on:
-  push:
-    branches: [main]
-  workflow_dispatch:
-
-permissions:
-  contents: write
-
-jobs:
-  build_and_deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Run build script
-        run: |
-          chmod +x Build/Buildscripts/build.sh
-          ./Build/Buildscripts/build.sh
-
-      - name: Deploy to GitHub Pages
-        uses: JamesIves/github-pages-deploy-action@v4
-        with:
-          branch: gh-pages
-          folder: Build/dist
