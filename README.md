@@ -48,14 +48,15 @@ A powerful, browser-based HTML/CSS/JavaScript code editor and live preview tool.
 - Timestamp for each log entry
 
 ## Gallery
-<img width="1280" alt="Screenshot 2025-06-01 at 8 49 54 PM" src="https://github.com/user-attachments/assets/117236d9-2496-4fd0-acf5-6709ff5bf777" />
-<img width="1280" alt="Screenshot 2025-06-01 at 8 48 57 PM" src="https://github.com/user-attachments/assets/8355f015-fca2-4986-a0aa-8cc6c03220c0" />
-<img width="1280" alt="Screenshot 2025-06-01 at 8 49 26 PM" src="https://github.com/user-attachments/assets/ee1024ee-5cb6-4ebc-8736-3e0948238309" />
+<img width="720" height="377" alt="Screenshot 2025-07-29 at 12 44 17 PM" src="https://github.com/user-attachments/assets/eb469d44-4ff9-4635-8c8a-26c6f76df3d8" />
+<img width="720" height="377" alt="Screenshot 2025-07-29 at 12 44 27 PM" src="https://github.com/user-attachments/assets/69667f6b-e891-4d78-953e-a1e7dee3c505" />
+<img width="720" height="377" alt="Screenshot 2025-07-29 at 12 44 44 PM" src="https://github.com/user-attachments/assets/0f2fe0ff-fde3-45d2-9503-d4de0a1c8946" />
+
 
 ## Getting Started
 
 ### Online Version
-Visit the live version at: [https://nellowtcs.github.io/HTMLRunner/](https://nellowtcs.github.io/HTMLRunner/)
+Visit the live version at: [https://htmltoolkit.github.io/HTMLRunner/](https://htmltoolkit.github.io/HTMLRunner/)
 
 ### Single File
 Due to the Webpack build being rather large, I recommend using the website, but you do you :D. </br>
