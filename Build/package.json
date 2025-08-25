@@ -28,7 +28,7 @@
     "@uiw/codemirror-theme-bbedit": "^4.24.1",
     "@uiw/codemirror-theme-monokai": "^4.24.1",
     "codemirror": "^6.0.2",
-    "eslint": "^9.33.0",
+    "eslint": "^9.34.0",
     "eslint-linter-browserify": "^9.31.0",
     "file-saver": "^2.0.5",
     "fontawesome": "^5.6.3",
