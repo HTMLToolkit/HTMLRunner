@@ -13,8 +13,8 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@babel/core": "^7.28.3",
-    "@babel/parser": "^7.28.4",
+    "@babel/core": "^7.28.4",
+    "@babel/parser": "^7.27.5",
     "@babel/runtime": "^7.28.3",
     "@codemirror/commands": "^6.8.1",
     "@codemirror/lang-css": "^6.3.1",
