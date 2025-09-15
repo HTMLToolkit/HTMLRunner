@@ -43,7 +43,7 @@
     "@types/prettier": "^3.0.0",
     "@types/split.js": "^1.6.0",
     "copy-webpack-plugin": "^13.0.1",
-    "htmlhint": "^1.6.3",
+    "htmlhint": "^1.7.0",
     "ts-loader": "^9.5.4",
     "typescript": "^5.9.2",
     "webpack": "^5.101.3",
