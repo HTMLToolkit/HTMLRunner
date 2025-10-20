@@ -29,7 +29,7 @@
     "@uiw/codemirror-theme-monokai": "^4.25.2",
     "codemirror": "^6.0.2",
     "eslint": "^9.37.0",
-    "eslint-linter-browserify": "^9.37.0",
+    "eslint-linter-browserify": "^9.38.0",
     "file-saver": "^2.0.5",
     "fontawesome": "^5.6.3",
     "jszip": "^3.10.1",
