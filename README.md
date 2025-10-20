@@ -8,8 +8,6 @@
 
 A powerful, browser-based HTML/CSS/JavaScript code editor and live preview tool. Write, test, and debug your web code with real-time execution and an integrated console.
 
-(I learned TypeScript finally, yay!!!)
-
 ## Features
 
 ### **Web Code Editor**
