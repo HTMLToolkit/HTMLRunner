@@ -24,7 +24,7 @@
     "@codemirror/state": "^6.5.2",
     "@codemirror/view": "^6.38.6",
     "@prettier/plugin-xml": "^3.4.2",
-    "@types/codemirror": "^5.60.16",
+    "@types/codemirror": "^5.60.17",
     "@uiw/codemirror-theme-bbedit": "^4.25.2",
     "@uiw/codemirror-theme-monokai": "^4.25.2",
     "codemirror": "^6.0.2",
