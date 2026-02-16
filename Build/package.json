@@ -20,7 +20,7 @@
     "@codemirror/lang-css": "^6.3.1",
     "@codemirror/lang-html": "^6.4.11",
     "@codemirror/lang-javascript": "^6.2.4",
-    "@codemirror/lint": "^6.9.3",
+    "@codemirror/lint": "^6.9.4",
     "@codemirror/state": "^6.5.4",
     "@codemirror/view": "^6.39.13",
     "@prettier/plugin-xml": "^3.4.2",
