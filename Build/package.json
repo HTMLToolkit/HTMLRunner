@@ -36,13 +36,13 @@
     "prettier": "^3.8.1",
     "prettier-plugin-css-order": "^2.2.0",
     "split.js": "^1.6.5",
-    "copy-webpack-plugin": "^13.0.1"
+    "copy-webpack-plugin": "^14.0.0"
   },
   "devDependencies": {
     "@types/file-saver": "^2.0.7",
     "@types/prettier": "^3.0.0",
     "@types/split.js": "^1.6.0",
-    "copy-webpack-plugin": "^13.0.1",
+    "copy-webpack-plugin": "^14.0.0",
     "htmlhint": "^1.9.2",
     "ts-loader": "^9.5.4",
     "typescript": "^5.9.3",
