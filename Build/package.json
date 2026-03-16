@@ -22,7 +22,7 @@
     "@codemirror/lang-javascript": "^6.2.5",
     "@codemirror/lint": "^6.9.5",
     "@codemirror/state": "^6.6.0",
-    "@codemirror/view": "^6.39.16",
+    "@codemirror/view": "^6.40.0",
     "@prettier/plugin-xml": "^3.4.2",
     "@types/codemirror": "^5.60.17",
     "@uiw/codemirror-theme-bbedit": "^4.25.4",
