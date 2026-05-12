@@ -4,9 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HTMLRunner</title>
-    <link rel="shortcut icon" type="image/x-icon" href="favicon.png">
-    <link rel="apple-touch-icon" href="favicon.png">
-    <link rel="manifest" href="manifest.json">
     <!-- Font Awesome CDN -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
     <!-- CodeMirror CSS -->
@@ -17,9 +14,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/addon/dialog/dialog.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/addon/search/matchesonscrollbar.min.css">
     <!-- Main Styles-->
-    <!-- prettier-ignore-start -->
-    <link rel="stylesheet" data-inline="true" href="styles.css">
-    <!-- prettier-ignore-end -->
+    <link rel="stylesheet" href="./styles/styles.css">
 </head>
 <body>
     <div class="loading" id="loading">
@@ -66,47 +61,6 @@
             </div>
         </div>
     </div>
-    <script>
-        document.addEventListener("DOMContentLoaded", function() {
-            // Register the service worker
-            if ("serviceWorker" in navigator) {
-                navigator.serviceWorker.register("service-worker.js");
-            }
-    
-            let deferredPrompt;
-            const installButton = document.getElementById("install-button");
-    
-            // Listen for the install prompt
-            window.addEventListener("beforeinstallprompt", (e) => {
-                e.preventDefault();
-                deferredPrompt = e;
-                installButton.hidden = false;
-            });
-    
-            // Handle install button click
-            installButton.addEventListener("click", async () => {
-                const isStandalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone;
-    
-                if (isStandalone) {
-                    console.log("App is already installed");
-                    return;
-                }
-    
-                if (deferredPrompt) {
-                    deferredPrompt.prompt();
-                    const { outcome } = await deferredPrompt.userChoice;
-                    deferredPrompt = null;
-                    console.log(outcome === "accepted" ? "User accepted install prompt" : "User dismissed install prompt");
-                } else {
-                    if (window.matchMedia("(display-mode: browser)").matches) {
-                        window.location.assign("chrome://apps/");
-                    }
-                }
-            });
-        });
-    </script>
-    <!-- prettier-ignore-start -->
-    <script data-inline="true" src="main.js"></script>
-    <!-- prettier-ignore-end -->
+    <script type="module" src="./src/main.ts"></script>
 </body>
 </html>

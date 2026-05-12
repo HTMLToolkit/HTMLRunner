@@ -1,17 +1,22 @@
 {
   "name": "htmlrunner",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "A small live HTML/JS runner with console capture.",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "webpack",
-    "watch": "webpack --watch",
-    "start": "webpack serve --open"
+    "dev": "vite",
+    "build": "vite build",
+    "build:single": "cross-env SINGLE_FILE=true npm run build",
+    "preview": "vite preview",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HTMLToolkit/HTMLRunner.git"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "NellowTCS",
+  "license": "MIT",
   "dependencies": {
     "@babel/core": "^7.29.0",
     "@babel/parser": "^7.29.3",
@@ -35,19 +40,19 @@
     "jszip": "^3.10.1",
     "prettier": "^3.8.3",
     "prettier-plugin-css-order": "^2.2.0",
-    "split.js": "^1.6.5",
-    "copy-webpack-plugin": "^14.0.0"
+    "split.js": "^1.6.5"
   },
   "devDependencies": {
     "@types/file-saver": "^2.0.7",
-    "@types/prettier": "^3.0.0",
-    "@types/split.js": "^1.6.0",
-    "copy-webpack-plugin": "^14.0.0",
+    "@types/prettier": "^2.7.3",
+    "@types/split.js": "^1.4.0",
+    "@vite-pwa/assets-generator": "^1.0.1",
+    "cross-env": "^10.1.0",
     "htmlhint": "^1.9.2",
-    "ts-loader": "^9.5.7",
+    "sharp": "^0.34.4",
     "typescript": "^6.0.3",
-    "webpack": "^5.106.2",
-    "webpack-cli": "^7.0.2",
-    "webpack-dev-server": "^5.2.4"
+    "vite": "^8.0.12",
+    "vite-plugin-pwa": "^1.0.3",
+    "vite-plugin-singlefile": "^2.3.0"
   }
 }
