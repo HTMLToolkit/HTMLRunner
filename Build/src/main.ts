@@ -1,4 +1,5 @@
 import { initializeEditors, setDarkMode, setAutoRun } from "./editor";
+import "@fortawesome/fontawesome-free/css/all.min.css";
 import { EditorView, keymap } from "@codemirror/view";
 import { EditorState, StateEffect } from "@codemirror/state";
 import {
