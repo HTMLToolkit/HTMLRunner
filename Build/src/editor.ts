@@ -11,12 +11,9 @@ import { CodeMirrorEditor, Editors } from "./types";
 import { runCode } from "./runner";
 import { toggleSearch } from "./main";
 import { debounce } from "./utils";
-import { saveState } from "./state";
+import { autoRunState, cssState, darkModeState, htmlState, jsState } from "./appState";
 import { search } from "@codemirror/search";
 import { toggleComment } from "@codemirror/commands"; // Ensure toggleComment is imported
-
-export let isDarkMode: boolean = localStorage.getItem("darkMode") === "true";
-export let isAutoRun: boolean = localStorage.getItem("autoRun") === "true";
 
 export const editors: Editors = {
   html: null as unknown as CodeMirrorEditor,
@@ -25,24 +22,25 @@ export const editors: Editors = {
 };
 
 export function setDarkMode(value: boolean): void {
-  isDarkMode = value;
+  darkModeState.set(value);
   Object.values(editors).forEach((editor) => {
     editor.view.dispatch({
       effects: editor.themeCompartment.reconfigure(
-        isDarkMode ? monokai : bbedit
+        darkModeState.get() ? monokai : bbedit
       ),
     });
   });
 }
 
 export function setAutoRun(value: boolean): void {
-  isAutoRun = value;
+  autoRunState.set(value);
 }
 
 function createEditorConfig(
   language: Extension,
   container: HTMLElement,
-  content: string
+  content: string,
+  contentState: typeof htmlState | typeof cssState | typeof jsState
 ): CodeMirrorEditor {
   const themeCompartment = new Compartment();
   const autoRunCompartment = new Compartment();
@@ -53,7 +51,7 @@ function createEditorConfig(
       extensions: [
         lineNumbers(),
         language,
-        themeCompartment.of(isDarkMode ? monokai : bbedit),
+        themeCompartment.of(darkModeState.get() ? monokai : bbedit),
         EditorView.lineWrapping,
         EditorState.tabSize.of(2),
         EditorView.theme({
@@ -84,18 +82,18 @@ function createEditorConfig(
           },
         ]),
         autoRunCompartment.of(
-          isAutoRun
+          autoRunState.get()
             ? EditorView.updateListener.of((update) => {
                 if (update.docChanged) {
+                  contentState.set(update.state.doc.toString());
                   debounce(runCode, 1000)();
                 }
               })
             : []
         ),
-        // Autosave listener
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
-            debounce(saveState, 1000)();
+            contentState.set(update.state.doc.toString());
           }
         }),
       ],
@@ -133,7 +131,7 @@ export function initializeEditors(): void {
     throw new Error("Editor containers not found");
   }
 
-  editors.html = createEditorConfig(html(), htmlContainer, "");
-  editors.css = createEditorConfig(css(), cssContainer, "");
-  editors.js = createEditorConfig(javascript(), jsContainer, "");
+  editors.html = createEditorConfig(html(), htmlContainer, htmlState.get(), htmlState);
+  editors.css = createEditorConfig(css(), cssContainer, cssState.get(), cssState);
+  editors.js = createEditorConfig(javascript(), jsContainer, jsState.get(), jsState);
 }

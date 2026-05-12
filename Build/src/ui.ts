@@ -1,22 +1,22 @@
 import {
   editors,
-  isDarkMode,
-  isAutoRun,
   setDarkMode,
   setAutoRun,
 } from "./editor";
-import { saveState } from "./state";
 import { runCode } from "./runner";
 import { debounce } from "./utils";
 import { EditorView } from "@codemirror/view";
+import {
+  activeOutputState,
+  activeTabState,
+  autoRunState,
+  darkModeState,
+} from "./appState";
 
 export const loadingEl = document.getElementById("loading") as HTMLDivElement;
 export const errorEl = document.getElementById(
   "error-message"
 ) as HTMLDivElement;
-
-let currentTab = "html";
-let currentOutput = "preview";
 
 export function showLoading(): void {
   loadingEl.classList.add("active");
@@ -33,7 +33,7 @@ export function showError(message: string): void {
 }
 
 export function switchTab(tab: string): void {
-  currentTab = tab;
+  activeTabState.set(tab);
 
   // Hide all editor containers
   document.querySelectorAll(".editor-container").forEach((c) => {
@@ -61,12 +61,11 @@ export function switchTab(tab: string): void {
   tabElement.classList.add("active");
 
   editors[tab].view.focus();
-  saveState();
 }
 
 
 export function switchOutput(output: string): void {
-  currentOutput = output;
+  activeOutputState.set(output);
   const previewEl = document.getElementById("preview");
   const consoleEl = document.getElementById("console");
   const targetEl = document.getElementById(output);
@@ -86,13 +85,11 @@ export function switchOutput(output: string): void {
     .querySelectorAll(".output-tabs .tab")
     .forEach((t) => t.classList.remove("active"));
   tabEl.classList.add("active");
-  saveState();
 }
 
 export function toggleAutoRun(): void {
-  const newAutoRun = !isAutoRun;
+  const newAutoRun = !autoRunState.get();
   setAutoRun(newAutoRun);
-  localStorage.setItem("autoRun", String(newAutoRun));
 
   Object.values(editors).forEach((editor) => {
     const listener = newAutoRun
@@ -113,14 +110,14 @@ export function toggleAutoRun(): void {
 export function updateAutoRunStatus(): void {
   const statusEl = document.getElementById("auto-run-status");
   if (statusEl) {
-    statusEl.textContent = isAutoRun ? "On" : "Off";
+    statusEl.textContent = autoRunState.get() ? "On" : "Off";
   }
 }
 
 export function toggleDarkMode(): void {
-  setDarkMode(!isDarkMode);
-  document.body.classList.toggle("dark-mode");
-  localStorage.setItem("darkMode", String(isDarkMode));
+  const newDarkMode = !darkModeState.get();
+  setDarkMode(newDarkMode);
+  document.body.classList.toggle("dark-mode", newDarkMode);
   updateThemeIcon();
 }
 
@@ -128,17 +125,16 @@ export function updateThemeIcon(): void {
   const icon = document.querySelector(".theme-toggle i");
   const label = document.querySelector(".theme-toggle span");
   if (label) {
-    label.textContent = isDarkMode ? "Light Mode" : "Dark Mode";
+    label.textContent = darkModeState.get() ? "Light Mode" : "Dark Mode";
   }
   if (icon) {
-    icon.classList.toggle("fa-moon", !isDarkMode);
-    icon.classList.toggle("fa-sun", isDarkMode);
+    icon.classList.toggle("fa-moon", !darkModeState.get());
+    icon.classList.toggle("fa-sun", darkModeState.get());
   }
 }
 
 export function setPageDarkMode(value: boolean): void {
   setDarkMode(value);
   document.body.classList.toggle("dark-mode", value);
-  localStorage.setItem("darkMode", String(value));
   updateThemeIcon();
 }

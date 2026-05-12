@@ -37,6 +37,8 @@ export interface State {
   activeTab: string;
   activeOutput: string;
   splitSizes: number[];
+  darkMode: boolean;
+  autoRun: boolean;
 }
 
 export interface ConsoleMessage {

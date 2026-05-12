@@ -2,12 +2,38 @@ import { editors } from "./editor";
 import { consoleInterceptor } from "./console";
 import { showError, showLoading, hideLoading, switchOutput } from "./ui";
 import { clearConsole, logConsoleError } from "./console";
-import { saveState } from "./state";
-import * as prettier from "prettier/standalone";
-import * as parserHtml from "prettier/plugins/html";
-import * as parserCss from "prettier/plugins/postcss";
-import * as parserBabel from "prettier/plugins/babel"; // Use Babel instead of Flow
-import * as prettierPluginEstree from "prettier/plugins/estree";
+
+type PrettierBundle = {
+  prettier: typeof import("prettier/standalone");
+  parserHtml: typeof import("prettier/plugins/html");
+  parserCss: typeof import("prettier/plugins/postcss");
+  parserBabel: typeof import("prettier/plugins/babel");
+  prettierPluginEstree: typeof import("prettier/plugins/estree");
+};
+
+let prettierBundlePromise: Promise<PrettierBundle> | undefined;
+
+async function loadPrettierBundle(): Promise<PrettierBundle> {
+  if (!prettierBundlePromise) {
+    prettierBundlePromise = Promise.all([
+      import("prettier/standalone"),
+      import("prettier/plugins/html"),
+      import("prettier/plugins/postcss"),
+      import("prettier/plugins/babel"),
+      import("prettier/plugins/estree"),
+    ]).then(
+      ([prettier, parserHtml, parserCss, parserBabel, prettierPluginEstree]) => ({
+        prettier,
+        parserHtml,
+        parserCss,
+        parserBabel,
+        prettierPluginEstree,
+      })
+    );
+  }
+
+  return prettierBundlePromise;
+}
 
 export function runCode(): void {
   showLoading();
@@ -77,7 +103,6 @@ export function runCode(): void {
     preview.src = url;
     preview.addEventListener("load", () => URL.revokeObjectURL(url));
     switchOutput("preview");
-    saveState();
   } catch (error: any) {
     showError(`Error running code: ${error.message}`);
   } finally {
@@ -87,6 +112,14 @@ export function runCode(): void {
 
 export async function formatCode(): Promise<void> {
   try {
+    const {
+      prettier,
+      parserHtml,
+      parserCss,
+      parserBabel,
+      prettierPluginEstree,
+    } = await loadPrettierBundle();
+
     // Format each editor separately with error handling
     let formattedHtml = editors.html.view.state.doc.toString();
     let formattedCss = editors.css.view.state.doc.toString();
@@ -199,8 +232,6 @@ export async function formatCode(): Promise<void> {
         insert: formattedJs,
       },
     });
-
-    saveState();
   } catch (error: any) {
     showError(`Error formatting code: ${error.message}`);
   }

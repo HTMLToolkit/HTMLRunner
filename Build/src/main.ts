@@ -10,13 +10,6 @@ import {
 } from "@codemirror/search";
 import { toggleComment } from "@codemirror/commands";
 import Split from "split.js";
-import * as prettier from "prettier/standalone";
-import * as parserHtml from "prettier/plugins/html";
-import * as parserCss from "prettier/plugins/postcss";
-import * as parserFlow from "prettier/plugins/flow";
-import * as prettierPluginEstree from "prettier/plugins/estree";
-import JSZip from "jszip";
-import { saveAs } from "file-saver";
 import { copyToClipboard } from "./utils";
 import { editors } from "./editor";
 import {
@@ -28,8 +21,9 @@ import {
 } from "./types";
 import { consoleInterceptor, consoleOutput, clearConsole, logConsoleError } from "./console";
 import { runCode, formatCode } from "./runner";
-import { resetCode, state, saveState, loadState } from "./state";
-import { switchTab, switchOutput, showError, showLoading, hideLoading, updateThemeIcon, setPageDarkMode } from "./ui"; // Import updateThemeIcon
+import { resetCode, loadState } from "./appState";
+import { switchTab, switchOutput, showError, showLoading, hideLoading, updateThemeIcon, setPageDarkMode } from "./ui";
+import { activeTabState, autoRunState, darkModeState, splitSizesState } from "./appState";
 
 // Type declarations for global window properties
 declare global {
@@ -50,14 +44,6 @@ declare global {
   }
 }
 
-// Register Prettier plugins
-const plugins = [parserHtml, parserCss, parserFlow];
-window.prettierPlugins = plugins;
-
-let currentTab: string = "html";
-let currentOutput: string = "preview";
-let isDarkMode: boolean = localStorage.getItem("darkMode") === "true";
-let isAutoRun: boolean = localStorage.getItem("autoRun") === "true";
 let splitInstance: Split.Instance;
 const loadingEl = document.getElementById("loading") as HTMLDivElement;
 const errorEl = document.getElementById("error-message") as HTMLDivElement;
@@ -82,7 +68,7 @@ function initializeSplit() {
   }
 
   splitInstance = Split(elements, {
-    sizes: state.splitSizes || [50, 50],
+    sizes: splitSizesState.get() || [50, 50],
     minSize: 200,
     gutterSize: 10,
     snapOffset: 0,
@@ -103,8 +89,7 @@ function initializeSplit() {
     },
     onDragEnd: function (sizes) {
       document.body.style.cursor = "";
-      state.splitSizes = sizes;
-      saveState();
+      splitSizesState.set(sizes);
       Object.values(editors).forEach((editor) => editor.view.requestMeasure());
     },
   });
@@ -270,13 +255,12 @@ function renderObject(obj: any, level = 0, visited = new WeakSet()): Node {
 
 // Toggle auto-run
 function toggleAutoRun(): void {
-  isAutoRun = !isAutoRun;
-  setAutoRun(isAutoRun);
-  localStorage.setItem("autoRun", String(isAutoRun));
+  const newAutoRun = !autoRunState.get();
+  setAutoRun(newAutoRun);
   updateAutoRunStatus();
 
   Object.values(editors).forEach((editor) => {
-    const listener = isAutoRun
+    const listener = newAutoRun
       ? EditorView.updateListener.of((update) => {
           if (update.docChanged) {
             debounce(runCode, 1000)();
@@ -292,16 +276,15 @@ function toggleAutoRun(): void {
 function updateAutoRunStatus(): void {
   const statusEl = document.getElementById("auto-run-status");
   if (statusEl) {
-    statusEl.textContent = isAutoRun ? "On" : "Off";
+    statusEl.textContent = autoRunState.get() ? "On" : "Off";
   }
 }
 
 // Toggle dark mode
 function toggleDarkMode(): void {
-  isDarkMode = !isDarkMode;
-  setDarkMode(isDarkMode);
-  document.body.classList.toggle("dark-mode");
-  localStorage.setItem("darkMode", String(isDarkMode));
+  const newDarkMode = !darkModeState.get();
+  setDarkMode(newDarkMode);
+  document.body.classList.toggle("dark-mode", newDarkMode);
   updateThemeIcon();
 }
 
@@ -322,10 +305,16 @@ async function exportAsZip() {
   }
 
   if (files.length === 1) {
+    const { saveAs } = await import("file-saver");
     const blob = new Blob([files[0].content], { type: "text/plain" });
     saveAs(blob, files[0].name);
     return;
   }
+
+  const [{ default: JSZip }, { saveAs }] = await Promise.all([
+    import("jszip"),
+    import("file-saver"),
+  ]);
 
   const zip = new JSZip();
   for (const file of files) {
@@ -479,7 +468,7 @@ function initializeLogFilters(): void {
 
 // Search toggle function
 export function toggleSearch(mode: "find" | "replace" = "find"): void {
-  const editor = editors[currentTab].view;
+  const editor = editors[activeTabState.get()].view;
   if (editor) {
     const isOpen = searchPanelOpen(editor.state);
     if (isOpen) {
@@ -487,6 +476,13 @@ export function toggleSearch(mode: "find" | "replace" = "find"): void {
     } else {
       openSearchPanel(editor);
     }
+
+    window.requestAnimationFrame(() => {
+      const selector = mode === "replace" ? '.cm-search input[name="replace"]' : '.cm-search input[name="search"]';
+      const field = document.querySelector(selector) as HTMLInputElement | null;
+      field?.focus();
+      field?.select();
+    });
   }
 }
 
@@ -532,11 +528,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   // Apply dark mode to page and editors on load
-  if (isDarkMode) {
-    setPageDarkMode(true);
-  }
-
   loadState();
+    setPageDarkMode(darkModeState.get());
+    updateAutoRunStatus();
   formatCode().catch((error) => {
     showError(`Error formatting code: ${error.message}`);
   });
