@@ -1,14 +1,11 @@
 import { initializeEditors, setDarkMode, setAutoRun } from "./editor";
 import "@fortawesome/fontawesome-free/css/all.min.css";
-import { EditorView, keymap } from "@codemirror/view";
-import { EditorState, StateEffect } from "@codemirror/state";
 import {
   search,
   openSearchPanel,
   searchPanelOpen,
   closeSearchPanel,
 } from "@codemirror/search";
-import { toggleComment } from "@codemirror/commands";
 import Split from "split.js";
 import { copyToClipboard } from "./utils";
 import { editors } from "./editor";
@@ -258,19 +255,6 @@ function toggleAutoRun(): void {
   const newAutoRun = !autoRunState.get();
   setAutoRun(newAutoRun);
   updateAutoRunStatus();
-
-  Object.values(editors).forEach((editor) => {
-    const listener = newAutoRun
-      ? EditorView.updateListener.of((update) => {
-          if (update.docChanged) {
-            debounce(runCode, 1000)();
-          }
-        })
-      : [];
-    editor.view.dispatch({
-      effects: editor.autoRunCompartment.reconfigure(listener),
-    });
-  });
 }
 
 function updateAutoRunStatus(): void {

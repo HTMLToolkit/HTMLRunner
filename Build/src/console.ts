@@ -1,4 +1,5 @@
 import { ConsoleMessage, StackInfo } from './types';
+import { editors } from './editor';
 
 export const consoleOutput = document.getElementById('console') as HTMLDivElement;
 
@@ -49,8 +50,34 @@ function handleConsoleMessage(event: MessageEvent<ConsoleMessage>): void {
         if (event.data.data[1]?.stack) {
             const stack = document.createElement('div');
             stack.className = 'console-stack';
-            stack.textContent = event.data.data[1].stack;
-            stack.addEventListener('click', () => stack.classList.toggle('expanded'));
+            const rawStack: string = event.data.data[1].stack;
+            // Render each stack line as a clickable element when possible
+            rawStack.split('\n').forEach((line) => {
+                const lineEl = document.createElement('div');
+                lineEl.className = 'console-stack-line';
+                lineEl.textContent = line.trim();
+                // Try to parse ":line:col" at end of line
+                const m = line.match(/:(\d+):(\d+)\)?$/);
+                if (m) {
+                    const lineNum = parseInt(m[1], 10);
+                    const colNum = parseInt(m[2], 10);
+                    lineEl.classList.add('clickable');
+                    lineEl.addEventListener('click', () => {
+                        // Focus JS editor if available and set cursor
+                        const ed = editors.js;
+                        if (!ed) return;
+                        const doc = ed.view.state.doc;
+                        const maxLine = doc.lines;
+                        const safeLine = Math.max(1, Math.min(lineNum, maxLine));
+                        const lineObj = doc.line(safeLine);
+                        const offset = Math.min(lineObj.to, lineObj.from + Math.max(0, colNum - 1));
+                        ed.view.dispatch({ selection: { anchor: offset } });
+                        ed.view.focus();
+                    });
+                }
+                stack.appendChild(lineEl);
+            });
+            stack.addEventListener('click', (e) => { if (e.target === stack) stack.classList.toggle('expanded'); });
             message.appendChild(stack);
         }
         entry.appendChild(timestamp);

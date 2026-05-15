@@ -1,10 +1,12 @@
 import { Compartment, EditorState, Extension } from "@codemirror/state";
-import { EditorView, lineNumbers, keymap } from "@codemirror/view"; // Add standardKeymap, defaultKeymap
-import { defaultKeymap, standardKeymap } from "@codemirror/commands";
+import { EditorView, keymap, lineNumbers } from "@codemirror/view";
+import { defaultKeymap, standardKeymap, toggleComment } from "@codemirror/commands";
 import { html } from "@codemirror/lang-html";
 import { css } from "@codemirror/lang-css";
 import { javascript } from "@codemirror/lang-javascript";
-import { linter, lintGutter } from "@codemirror/lint";
+import { autocompletion } from "@codemirror/autocomplete";
+import { foldGutter, foldKeymap } from "@codemirror/language";
+import { formatCode } from "./runner";
 import { monokai } from "@uiw/codemirror-theme-monokai";
 import { bbedit } from "@uiw/codemirror-theme-bbedit";
 import { CodeMirrorEditor, Editors } from "./types";
@@ -13,7 +15,6 @@ import { toggleSearch } from "./main";
 import { debounce } from "./utils";
 import { autoRunState, cssState, darkModeState, htmlState, jsState } from "./appState";
 import { search } from "@codemirror/search";
-import { toggleComment } from "@codemirror/commands"; // Ensure toggleComment is imported
 
 export const editors: Editors = {
   html: null as unknown as CodeMirrorEditor,
@@ -34,10 +35,17 @@ export function setDarkMode(value: boolean): void {
 
 export function setAutoRun(value: boolean): void {
   autoRunState.set(value);
+  Object.values(editors).forEach((editor) => {
+    editor.view.dispatch({
+      effects: editor.autoRunCompartment.reconfigure(
+        value ? autoRunListener : []
+      ),
+    });
+  });
 }
 
 // Shared debounced runner used by auto-run listeners so debounce state is preserved across keystrokes
-const debouncedRun = debounce(runCode, 1000);
+const debouncedRun = debounce(runCode, 250);
 export const autoRunListener = EditorView.updateListener.of((update) => {
   if (update.docChanged) debouncedRun();
 });
@@ -56,6 +64,7 @@ function createEditorConfig(
       doc: content,
       extensions: [
         lineNumbers(),
+        foldGutter(),
         language,
         themeCompartment.of(darkModeState.get() ? monokai : bbedit),
         EditorView.lineWrapping,
@@ -66,16 +75,9 @@ function createEditorConfig(
           ".cm-content": { minHeight: "100%" }
         }),
         search(),
-        linter(
-          (view) => {
-            return [];
-          },
-          { delay: 100 }
-        ),
-        lintGutter(),
         keymap.of([
           ...defaultKeymap,
-          ...standardKeymap,
+          ...foldKeymap,
           { key: "Mod-/", run: toggleComment },
         ]),
         autoRunCompartment.of(autoRunState.get() ? autoRunListener : []),

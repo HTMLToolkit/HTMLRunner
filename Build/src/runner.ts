@@ -57,7 +57,7 @@ export function runCode(): void {
     }
 
     let docContent;
-    const isFullHtml = /<html[\s>]|<!doctype html/i.test(html);
+    const isFullHtml = /<html[\s>/]|<!doctype html/i.test(html);
     if (isFullHtml) {
       const parser = new DOMParser();
       const doc = parser.parseFromString(html, "text/html");
@@ -88,13 +88,13 @@ export function runCode(): void {
         "</style>",
         "<script>",
         consoleInterceptor,
-        "<\/script>",
+        "</script>",
         "</head><body>",
         html,
-        "<\/body>",
+        "</body>",
         "<script>",
         js,
-        "<\/script><\/html>",
+        "</script></html>",
       ].join("");
     }
 
@@ -105,7 +105,7 @@ export function runCode(): void {
       throw new Error("Preview element not found or is not an iframe");
     }
     preview.src = url;
-    preview.addEventListener("load", () => URL.revokeObjectURL(url));
+    preview.addEventListener("load", () => URL.revokeObjectURL(url), { once: true });
     switchOutput("preview");
   } catch (error: any) {
     showError(`Error running code: ${error.message}`);

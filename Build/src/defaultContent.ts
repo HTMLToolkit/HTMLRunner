@@ -5,12 +5,12 @@ export const defaultHtml = `<!DOCTYPE html>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<script src="script.js"><\/script>
+<script src="script.js"></script>
 <h1>Hello, HTMLRunner!</h1>
 <p>This is a demo page.</p>
 <button onclick="testFunction()">Click me!</button>
-<\/body>
-<\/html>`;
+</body>
+</html>`;
 
 export const defaultCss = `body {
 font-family: Arial, sans-serif;

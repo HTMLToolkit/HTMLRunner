@@ -111,9 +111,7 @@ export function updateAutoRunStatus(): void {
 
 export function toggleDarkMode(): void {
   const newDarkMode = !darkModeState.get();
-  setDarkMode(newDarkMode);
-  document.body.classList.toggle("dark-mode", newDarkMode);
-  updateThemeIcon();
+  setPageDarkMode(newDarkMode);
 }
 
 export function updateThemeIcon(): void {
