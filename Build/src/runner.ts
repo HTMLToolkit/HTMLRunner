@@ -29,7 +29,11 @@ async function loadPrettierBundle(): Promise<PrettierBundle> {
         parserBabel,
         prettierPluginEstree,
       })
-    );
+    ).catch((err) => {
+      // Reset cached promise so future attempts can retry
+      prettierBundlePromise = undefined;
+      throw err;
+    });
   }
 
   return prettierBundlePromise;
@@ -120,6 +124,12 @@ export async function formatCode(): Promise<void> {
       prettierPluginEstree,
     } = await loadPrettierBundle();
 
+    // Some dynamic imports expose the plugin as default export or as module namespace.
+    const pHtml = (parserHtml as any).default || parserHtml;
+    const pCss = (parserCss as any).default || parserCss;
+    const pBabel = (parserBabel as any).default || parserBabel;
+    const pEstree = (prettierPluginEstree as any).default || prettierPluginEstree;
+
     // Format each editor separately with error handling
     let formattedHtml = editors.html.view.state.doc.toString();
     let formattedCss = editors.css.view.state.doc.toString();
@@ -128,12 +138,12 @@ export async function formatCode(): Promise<void> {
     // Format HTML
     try {
       if (formattedHtml.trim()) {
-        // First normalize the HTML by removing extra whitespace
-        const normalizedHtml = formattedHtml.trim().replace(/^\s+/gm, '');
-        
+        // Trim surrounding whitespace
+        const normalizedHtml = formattedHtml.trim();
+
         formattedHtml = await prettier.format(normalizedHtml, {
           parser: "html",
-          plugins: [parserHtml],
+          plugins: [pHtml],
           printWidth: 120,
           tabWidth: 4,
           htmlWhitespaceSensitivity: "ignore",
@@ -143,9 +153,6 @@ export async function formatCode(): Promise<void> {
 
         // Ensure the formatted HTML is well-formed
         formattedHtml = formattedHtml.replace(/>\n\s*\n/g, '>\n');
-
-        // Remove two spaces from the beginning of each line
-        formattedHtml = formattedHtml.replace(/^  /gm, '');
 
       }
     } catch (error) {
@@ -158,12 +165,11 @@ export async function formatCode(): Promise<void> {
       if (formattedCss.trim()) {
         formattedCss = await prettier.format(formattedCss, {
           parser: "css",
-          plugins: [parserCss],
+          plugins: [pCss],
           printWidth: 100,
           tabWidth: 2,
         });
-        // Remove two spaces from the beginning of each line
-        formattedCss = formattedCss.replace(/^  /gm, '');
+        
       }
     } catch (error) {
       console.warn("CSS formatting failed:", error);
@@ -174,10 +180,7 @@ export async function formatCode(): Promise<void> {
       if (formattedJs.trim()) {
         formattedJs = await prettier.format(formattedJs, {
           parser: "babel", // Use babel instead of flow
-          plugins: [
-            parserBabel,
-            (prettierPluginEstree as any).default || prettierPluginEstree,
-          ],
+          plugins: [pBabel, pEstree],
           printWidth: 100,
           tabWidth: 2,
           semi: true,
@@ -185,8 +188,7 @@ export async function formatCode(): Promise<void> {
           trailingComma: "es5",
           bracketSpacing: true,
         });
-        // Remove two spaces from the beginning of each line
-        formattedJs = formattedJs.replace(/^  /gm, '');
+        
       }
     } catch (error) {
       console.warn("JavaScript formatting failed:", error);
@@ -194,17 +196,13 @@ export async function formatCode(): Promise<void> {
       try {
         formattedJs = await prettier.format(formattedJs, {
           parser: "babel-ts", // Alternative parser
-          plugins: [
-            parserBabel,
-            (prettierPluginEstree as any).default || prettierPluginEstree,
-          ],
+          plugins: [pBabel, pEstree],
           printWidth: 100,
           tabWidth: 2,
           semi: true,
           singleQuote: true,
         });
-        // Remove two spaces from the beginning of each line
-        formattedJs = formattedJs.replace(/^  /gm, '');
+        
       } catch (fallbackError) {
         console.warn("Fallback JavaScript formatting also failed:", fallbackError);
       }

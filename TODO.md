@@ -9,6 +9,6 @@
 - [ ] **Version Control** - Built-in Git integration using [isomorphic-git](https://github.com/isomorphic-git/isomorphic-git)
 - [ ] **Template Library** - Pre-built code snippets
 - [ ] **Performance Profiler** - Analyze code performance
-- [ ] **Auto Completion** (using the built in CodeMirror tools)
+- [ ] **Auto Completion** (using the built-in CodeMirror tools)
 - [ ] **Code Folding**
 - [ ] **Clickable Stack Traces**

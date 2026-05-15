@@ -2,6 +2,7 @@ import {
   editors,
   setDarkMode,
   setAutoRun,
+  autoRunListener,
 } from "./editor";
 import { runCode } from "./runner";
 import { debounce } from "./utils";
@@ -92,13 +93,7 @@ export function toggleAutoRun(): void {
   setAutoRun(newAutoRun);
 
   Object.values(editors).forEach((editor) => {
-    const listener = newAutoRun
-      ? EditorView.updateListener.of((update) => {
-          if (update.docChanged) {
-            debounce(runCode, 1000)();
-          }
-        })
-      : [];
+    const listener = newAutoRun ? autoRunListener : [];
     editor.view.dispatch({
       effects: editor.autoRunCompartment.reconfigure(listener),
     });

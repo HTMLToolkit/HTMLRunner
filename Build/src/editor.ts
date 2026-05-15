@@ -36,6 +36,12 @@ export function setAutoRun(value: boolean): void {
   autoRunState.set(value);
 }
 
+// Shared debounced runner used by auto-run listeners so debounce state is preserved across keystrokes
+const debouncedRun = debounce(runCode, 1000);
+export const autoRunListener = EditorView.updateListener.of((update) => {
+  if (update.docChanged) debouncedRun();
+});
+
 function createEditorConfig(
   language: Extension,
   container: HTMLElement,
@@ -68,29 +74,11 @@ function createEditorConfig(
         ),
         lintGutter(),
         keymap.of([
-          ...standardKeymap, // Add standard keymap
-          ...defaultKeymap, // Add default keymap
-          {
-            key: "Ctrl-/",
-            run: (view: EditorView) => {
-              view.dispatch({
-                changes: { from: 0, to: view.state.doc.length, insert: "" },
-              });
-              return true;
-            },
-            preventDefault: true,
-          },
+          ...defaultKeymap,
+          ...standardKeymap,
+          { key: "Mod-/", run: toggleComment },
         ]),
-        autoRunCompartment.of(
-          autoRunState.get()
-            ? EditorView.updateListener.of((update) => {
-                if (update.docChanged) {
-                  contentState.set(update.state.doc.toString());
-                  debounce(runCode, 1000)();
-                }
-              })
-            : []
-        ),
+        autoRunCompartment.of(autoRunState.get() ? autoRunListener : []),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
             contentState.set(update.state.doc.toString());

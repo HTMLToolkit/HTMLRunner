@@ -35,6 +35,13 @@ const splitSizesInitial =
     : [50, 50];
 const STORAGE_KEY = "htmlRunnerState";
 
+const ALLOWED_TABS = ["html", "css", "js"] as const;
+const ALLOWED_OUTPUTS = ["preview", "console"] as const;
+
+let _lastPersistedSnapshot = "";
+let _idleHandle: number | null = null;
+let _timeoutHandle: number | null = null;
+
 export const htmlState = signal(path("htmlrunner", "editor", "html"), htmlInitial);
 export const cssState = signal(path("htmlrunner", "editor", "css"), cssInitial);
 export const jsState = signal(path("htmlrunner", "editor", "js"), jsInitial);
@@ -46,11 +53,56 @@ export const autoRunState = signal(path("htmlrunner", "editor", "autoRun"), auto
 export const stateHydrated = signal(path("htmlrunner", "meta", "stateHydrated"), false);
 
 effect(() => {
-  if (!stateHydrated.get()) {
-    return;
+  if (!stateHydrated.get()) return;
+
+  const snapshot = createStateSnapshot();
+  const snapshotStr = JSON.stringify(snapshot);
+
+  // Skip if nothing changed since last successful persist
+  if (snapshotStr === _lastPersistedSnapshot) return;
+
+  // Cancel pending schedules
+  if (_idleHandle != null && (window as any).cancelIdleCallback) {
+    (window as any).cancelIdleCallback(_idleHandle);
+    _idleHandle = null;
+  }
+  if (_timeoutHandle != null) {
+    clearTimeout(_timeoutHandle);
+    _timeoutHandle = null;
   }
 
-  localStorage.setItem("htmlRunnerState", JSON.stringify(createStateSnapshot()));
+  const writeNow = () => {
+    try {
+      localStorage.setItem(STORAGE_KEY, snapshotStr);
+      _lastPersistedSnapshot = snapshotStr;
+    } catch (e) {
+      console.warn("Failed to persist state:", e);
+    }
+  };
+
+  // Prefer idle callback when available, fallback to a short timeout (500ms)
+  if (typeof (window as any).requestIdleCallback === "function") {
+    _idleHandle = (window as any).requestIdleCallback(() => {
+      writeNow();
+      _idleHandle = null;
+    }, { timeout: 1000 });
+  } else {
+    _timeoutHandle = window.setTimeout(() => {
+      writeNow();
+      _timeoutHandle = null;
+    }, 500);
+  }
+
+  return () => {
+    if (_idleHandle != null && (window as any).cancelIdleCallback) {
+      (window as any).cancelIdleCallback(_idleHandle);
+      _idleHandle = null;
+    }
+    if (_timeoutHandle != null) {
+      clearTimeout(_timeoutHandle);
+      _timeoutHandle = null;
+    }
+  };
 });
 
 export function createStateSnapshot(): State {
@@ -80,11 +132,19 @@ export function applyStateSnapshot(snapshot: Partial<State>): void {
   }
 
   if (typeof snapshot.activeTab === "string") {
-    activeTabState.set(snapshot.activeTab);
+    if ((ALLOWED_TABS as readonly string[]).includes(snapshot.activeTab)) {
+      activeTabState.set(snapshot.activeTab);
+    } else {
+      console.warn("Ignoring invalid persisted activeTab:", snapshot.activeTab);
+    }
   }
 
   if (typeof snapshot.activeOutput === "string") {
-    activeOutputState.set(snapshot.activeOutput);
+    if ((ALLOWED_OUTPUTS as readonly string[]).includes(snapshot.activeOutput)) {
+      activeOutputState.set(snapshot.activeOutput);
+    } else {
+      console.warn("Ignoring invalid persisted activeOutput:", snapshot.activeOutput);
+    }
   }
 
   if (

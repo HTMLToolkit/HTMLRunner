@@ -32,6 +32,7 @@ A powerful, browser-based HTML/CSS/JavaScript code editor and live preview tool.
 - **Export Functionality** - Download your project as a ZIP file
 - **Copy to Clipboard** for individual editors or console output
 - **Responsive Split-Panel** layout
+- **State Management** - Uses the Sairin path-based reactive store to manage editor content, UI state, and persistence.
 
 ### **User Experience**
 
