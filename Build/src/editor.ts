@@ -1,11 +1,12 @@
 import { Compartment, EditorState, Extension } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
-import { defaultKeymap, standardKeymap, toggleComment } from "@codemirror/commands";
+import { defaultKeymap, toggleComment } from "@codemirror/commands";
 import { html } from "@codemirror/lang-html";
 import { css } from "@codemirror/lang-css";
 import { javascript } from "@codemirror/lang-javascript";
 import { autocompletion } from "@codemirror/autocomplete";
-import { foldGutter, foldKeymap } from "@codemirror/language";
+import { foldGutter, foldKeymap, syntaxTree } from "@codemirror/language";
+import { linter, lintGutter } from "@codemirror/lint";
 import { formatCode } from "./runner";
 import { monokai } from "@uiw/codemirror-theme-monokai";
 import { bbedit } from "@uiw/codemirror-theme-bbedit";
@@ -65,6 +66,28 @@ function createEditorConfig(
       extensions: [
         lineNumbers(),
         foldGutter(),
+        // Linting: use syntax tree to surface parse errors from the language parser
+        linter((view) => {
+          const diags: any[] = [];
+          try {
+            syntaxTree(view.state).iterate({
+              enter: (node) => {
+                if (node.type.isError) {
+                  diags.push({
+                    from: node.from,
+                    to: node.to,
+                    severity: "error",
+                    message: "Syntax error",
+                  });
+                }
+              },
+            });
+          } catch (e) {
+            // If iterate isn't supported for some tree shapes, fail silently
+          }
+          return diags;
+        }),
+        lintGutter(),
         language,
         themeCompartment.of(darkModeState.get() ? monokai : bbedit),
         EditorView.lineWrapping,
