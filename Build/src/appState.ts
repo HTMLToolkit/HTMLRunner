@@ -30,7 +30,8 @@ const jsInitial = persistedState?.js ?? defaultJs;
 const activeTabInitial = persistedState?.activeTab ?? "html";
 const activeOutputInitial = persistedState?.activeOutput ?? "preview";
 const splitSizesInitial =
-  Array.isArray(persistedState?.splitSizes) && persistedState.splitSizes.length === 2
+  Array.isArray(persistedState?.splitSizes) &&
+  persistedState.splitSizes.length === 2
     ? persistedState.splitSizes
     : [50, 50];
 const STORAGE_KEY = "htmlRunnerState";
@@ -42,15 +43,36 @@ let _lastPersistedSnapshot = "";
 let _idleHandle: number | null = null;
 let _timeoutHandle: number | null = null;
 
-export const htmlState = signal(path("htmlrunner", "editor", "html"), htmlInitial);
+export const htmlState = signal(
+  path("htmlrunner", "editor", "html"),
+  htmlInitial,
+);
 export const cssState = signal(path("htmlrunner", "editor", "css"), cssInitial);
 export const jsState = signal(path("htmlrunner", "editor", "js"), jsInitial);
-export const activeTabState = signal(path("htmlrunner", "ui", "activeTab"), activeTabInitial);
-export const activeOutputState = signal(path("htmlrunner", "ui", "activeOutput"), activeOutputInitial);
-export const splitSizesState = signal(path("htmlrunner", "layout", "splitSizes"), splitSizesInitial);
-export const darkModeState = signal(path("htmlrunner", "ui", "darkMode"), darkModeInitial);
-export const autoRunState = signal(path("htmlrunner", "editor", "autoRun"), autoRunInitial);
-export const stateHydrated = signal(path("htmlrunner", "meta", "stateHydrated"), false);
+export const activeTabState = signal(
+  path("htmlrunner", "ui", "activeTab"),
+  activeTabInitial,
+);
+export const activeOutputState = signal(
+  path("htmlrunner", "ui", "activeOutput"),
+  activeOutputInitial,
+);
+export const splitSizesState = signal(
+  path("htmlrunner", "layout", "splitSizes"),
+  splitSizesInitial,
+);
+export const darkModeState = signal(
+  path("htmlrunner", "ui", "darkMode"),
+  darkModeInitial,
+);
+export const autoRunState = signal(
+  path("htmlrunner", "editor", "autoRun"),
+  autoRunInitial,
+);
+export const stateHydrated = signal(
+  path("htmlrunner", "meta", "stateHydrated"),
+  false,
+);
 
 effect(() => {
   if (!stateHydrated.get()) return;
@@ -82,10 +104,13 @@ effect(() => {
 
   // Prefer idle callback when available, fallback to a short timeout (500ms)
   if (typeof (window as any).requestIdleCallback === "function") {
-    _idleHandle = (window as any).requestIdleCallback(() => {
-      writeNow();
-      _idleHandle = null;
-    }, { timeout: 1000 });
+    _idleHandle = (window as any).requestIdleCallback(
+      () => {
+        writeNow();
+        _idleHandle = null;
+      },
+      { timeout: 1000 },
+    );
   } else {
     _timeoutHandle = window.setTimeout(() => {
       writeNow();
@@ -140,10 +165,15 @@ export function applyStateSnapshot(snapshot: Partial<State>): void {
   }
 
   if (typeof snapshot.activeOutput === "string") {
-    if ((ALLOWED_OUTPUTS as readonly string[]).includes(snapshot.activeOutput)) {
+    if (
+      (ALLOWED_OUTPUTS as readonly string[]).includes(snapshot.activeOutput)
+    ) {
       activeOutputState.set(snapshot.activeOutput);
     } else {
-      console.warn("Ignoring invalid persisted activeOutput:", snapshot.activeOutput);
+      console.warn(
+        "Ignoring invalid persisted activeOutput:",
+        snapshot.activeOutput,
+      );
     }
   }
 

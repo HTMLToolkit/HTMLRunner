@@ -21,19 +21,27 @@ async function loadPrettierBundle(): Promise<PrettierBundle> {
       import("prettier/plugins/postcss"),
       import("prettier/plugins/babel"),
       import("prettier/plugins/estree"),
-    ]).then(
-      ([prettier, parserHtml, parserCss, parserBabel, prettierPluginEstree]) => ({
-        prettier,
-        parserHtml,
-        parserCss,
-        parserBabel,
-        prettierPluginEstree,
-      })
-    ).catch((err) => {
-      // Reset cached promise so future attempts can retry
-      prettierBundlePromise = undefined;
-      throw err;
-    });
+    ])
+      .then(
+        ([
+          prettier,
+          parserHtml,
+          parserCss,
+          parserBabel,
+          prettierPluginEstree,
+        ]) => ({
+          prettier,
+          parserHtml,
+          parserCss,
+          parserBabel,
+          prettierPluginEstree,
+        }),
+      )
+      .catch((err) => {
+        // Reset cached promise so future attempts can retry
+        prettierBundlePromise = undefined;
+        throw err;
+      });
   }
 
   return prettierBundlePromise;
@@ -64,7 +72,7 @@ export function runCode(): void {
       if (!doc.head)
         doc.documentElement.insertBefore(
           document.createElement("head"),
-          doc.body
+          doc.body,
         );
       const script = document.createElement("script");
       script.textContent = consoleInterceptor;
@@ -105,7 +113,9 @@ export function runCode(): void {
       throw new Error("Preview element not found or is not an iframe");
     }
     preview.src = url;
-    preview.addEventListener("load", () => URL.revokeObjectURL(url), { once: true });
+    preview.addEventListener("load", () => URL.revokeObjectURL(url), {
+      once: true,
+    });
     switchOutput("preview");
   } catch (error: any) {
     showError(`Error running code: ${error.message}`);
@@ -128,7 +138,8 @@ export async function formatCode(): Promise<void> {
     const pHtml = (parserHtml as any).default || parserHtml;
     const pCss = (parserCss as any).default || parserCss;
     const pBabel = (parserBabel as any).default || parserBabel;
-    const pEstree = (prettierPluginEstree as any).default || prettierPluginEstree;
+    const pEstree =
+      (prettierPluginEstree as any).default || prettierPluginEstree;
 
     // Format each editor separately with error handling
     let formattedHtml = editors.html.view.state.doc.toString();
@@ -152,8 +163,7 @@ export async function formatCode(): Promise<void> {
         });
 
         // Ensure the formatted HTML is well-formed
-        formattedHtml = formattedHtml.replace(/>\n\s*\n/g, '>\n');
-
+        formattedHtml = formattedHtml.replace(/>\n\s*\n/g, ">\n");
       }
     } catch (error) {
       console.warn("HTML formatting skipped:", error);
@@ -169,7 +179,6 @@ export async function formatCode(): Promise<void> {
           printWidth: 100,
           tabWidth: 2,
         });
-        
       }
     } catch (error) {
       console.warn("CSS formatting failed:", error);
@@ -188,7 +197,6 @@ export async function formatCode(): Promise<void> {
           trailingComma: "es5",
           bracketSpacing: true,
         });
-        
       }
     } catch (error) {
       console.warn("JavaScript formatting failed:", error);
@@ -202,9 +210,11 @@ export async function formatCode(): Promise<void> {
           semi: true,
           singleQuote: true,
         });
-        
       } catch (fallbackError) {
-        console.warn("Fallback JavaScript formatting also failed:", fallbackError);
+        console.warn(
+          "Fallback JavaScript formatting also failed:",
+          fallbackError,
+        );
       }
     }
 

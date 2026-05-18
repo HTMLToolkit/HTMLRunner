@@ -12,9 +12,14 @@ import { monokai } from "@uiw/codemirror-theme-monokai";
 import { bbedit } from "@uiw/codemirror-theme-bbedit";
 import { CodeMirrorEditor, Editors } from "./types";
 import { runCode } from "./runner";
-import { toggleSearch } from "./main";
 import { debounce } from "./utils";
-import { autoRunState, cssState, darkModeState, htmlState, jsState } from "./appState";
+import {
+  autoRunState,
+  cssState,
+  darkModeState,
+  htmlState,
+  jsState,
+} from "./appState";
 import { search } from "@codemirror/search";
 
 export const editors: Editors = {
@@ -28,7 +33,7 @@ export function setDarkMode(value: boolean): void {
   Object.values(editors).forEach((editor) => {
     editor.view.dispatch({
       effects: editor.themeCompartment.reconfigure(
-        darkModeState.get() ? monokai : bbedit
+        darkModeState.get() ? monokai : bbedit,
       ),
     });
   });
@@ -39,7 +44,7 @@ export function setAutoRun(value: boolean): void {
   Object.values(editors).forEach((editor) => {
     editor.view.dispatch({
       effects: editor.autoRunCompartment.reconfigure(
-        value ? autoRunListener : []
+        value ? autoRunListener : [],
       ),
     });
   });
@@ -55,7 +60,7 @@ function createEditorConfig(
   language: Extension,
   container: HTMLElement,
   content: string,
-  contentState: typeof htmlState | typeof cssState | typeof jsState
+  contentState: typeof htmlState | typeof cssState | typeof jsState,
 ): CodeMirrorEditor {
   const themeCompartment = new Compartment();
   const autoRunCompartment = new Compartment();
@@ -95,7 +100,7 @@ function createEditorConfig(
         EditorView.theme({
           "&": { height: "100%" },
           ".cm-scroller": { overflow: "auto" },
-          ".cm-content": { minHeight: "100%" }
+          ".cm-content": { minHeight: "100%" },
         }),
         search(),
         keymap.of([
@@ -131,20 +136,35 @@ function createEditorConfig(
 
 export function initializeEditors(): void {
   const htmlContainer = document.getElementById(
-    "html-editor-container"
+    "html-editor-container",
   ) as HTMLElement;
   const cssContainer = document.getElementById(
-    "css-editor-container"
+    "css-editor-container",
   ) as HTMLElement;
   const jsContainer = document.getElementById(
-    "js-editor-container"
+    "js-editor-container",
   ) as HTMLElement;
 
   if (!htmlContainer || !cssContainer || !jsContainer) {
     throw new Error("Editor containers not found");
   }
 
-  editors.html = createEditorConfig(html(), htmlContainer, htmlState.get(), htmlState);
-  editors.css = createEditorConfig(css(), cssContainer, cssState.get(), cssState);
-  editors.js = createEditorConfig(javascript(), jsContainer, jsState.get(), jsState);
+  editors.html = createEditorConfig(
+    html(),
+    htmlContainer,
+    htmlState.get(),
+    htmlState,
+  );
+  editors.css = createEditorConfig(
+    css(),
+    cssContainer,
+    cssState.get(),
+    cssState,
+  );
+  editors.js = createEditorConfig(
+    javascript(),
+    jsContainer,
+    jsState.get(),
+    jsState,
+  );
 }

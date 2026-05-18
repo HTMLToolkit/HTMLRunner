@@ -1,7 +1,6 @@
 import { initializeEditors, setDarkMode, setAutoRun } from "./editor";
 import "@fortawesome/fontawesome-free/css/all.min.css";
 import {
-  search,
   openSearchPanel,
   searchPanelOpen,
   closeSearchPanel,
@@ -9,18 +8,25 @@ import {
 import Split from "split.js";
 import { copyToClipboard } from "./utils";
 import { editors } from "./editor";
-import {
-  Editors,
-  State,
-  ConsoleMessage,
-  StackInfo,
-  CodeMirrorEditor,
-} from "./types";
-import { consoleInterceptor, consoleOutput, clearConsole, logConsoleError } from "./console";
+import { ConsoleMessage } from "./types";
+import { consoleOutput, clearConsole } from "./console";
 import { runCode, formatCode } from "./runner";
 import { resetCode, loadState } from "./appState";
-import { switchTab, switchOutput, showError, showLoading, hideLoading, updateThemeIcon, setPageDarkMode } from "./ui";
-import { activeTabState, autoRunState, darkModeState, splitSizesState } from "./appState";
+import {
+  switchTab,
+  switchOutput,
+  showError,
+  updateThemeIcon,
+  setPageDarkMode,
+} from "./ui";
+import {
+  activeTabState,
+  autoRunState,
+  darkModeState,
+  splitSizesState,
+} from "./appState";
+import JSZip from "jszip";
+import { saveAs } from "file-saver";
 
 // Type declarations for global window properties
 declare global {
@@ -64,8 +70,16 @@ function initializeSplit() {
     return;
   }
 
+  const _sizes = splitSizesState.get();
+  const sizes =
+    Array.isArray(_sizes) &&
+    _sizes.length >= 2 &&
+    _sizes.every((n) => typeof n === "number" && isFinite(n) && n > 0)
+      ? _sizes
+      : [50, 50];
+
   splitInstance = Split(elements, {
-    sizes: splitSizesState.get() || [50, 50],
+    sizes,
     minSize: 200,
     gutterSize: 10,
     snapOffset: 0,
@@ -189,7 +203,7 @@ window.addEventListener("message", (event: MessageEvent<ConsoleMessage>) => {
         .map((item: any) =>
           typeof item === "object"
             ? JSON.stringify(item, null, 2)
-            : String(item)
+            : String(item),
         )
         .join(" ");
       copyToClipboard(text);
@@ -289,26 +303,30 @@ async function exportAsZip() {
   }
 
   if (files.length === 1) {
-    const { saveAs } = await import("file-saver");
-    const blob = new Blob([files[0].content], { type: "text/plain" });
-    saveAs(blob, files[0].name);
+    try {
+      const blob = new Blob([files[0].content], { type: "text/plain" });
+      saveAs(blob, files[0].name);
+    } catch (err) {
+      console.error("Failed to export file:", err);
+      showError("Unable to export file.");
+    }
     return;
   }
 
-  const [{ default: JSZip }, { saveAs }] = await Promise.all([
-    import("jszip"),
-    import("file-saver"),
-  ]);
+  try {
+    const zip = new JSZip();
+    for (const file of files) {
+      zip.file(file.name, file.content);
+    }
 
-  const zip = new JSZip();
-  for (const file of files) {
-    zip.file(file.name, file.content);
+    const content = await zip.generateAsync({ type: "blob" });
+    saveAs(content, "htmlrunner-export.zip");
+  } catch (err) {
+    console.error("Failed to create ZIP:", err);
+    showError("Unable to create ZIP.");
+    return;
   }
-
-  const content = await zip.generateAsync({ type: "blob" });
-  saveAs(content, "htmlrunner-export.zip");
 }
-
 
 // Copy console content
 function copyAllConsole(): void {
@@ -318,8 +336,8 @@ function copyAllConsole(): void {
       const timestamp = entry.querySelector(".timestamp")?.textContent || "";
       const message = Array.from(
         entry.querySelectorAll(
-          ".console-log, .console-error, .console-warn, .console-info"
-        )
+          ".console-log, .console-error, .console-warn, .console-info",
+        ),
       )
         .map((el) => el.textContent)
         .join("");
@@ -355,7 +373,7 @@ function initializeCopyButtons(): void {
   });
 
   const consoleTab = document.querySelector(
-    '.output-tabs .tab[data-output="console"]'
+    '.output-tabs .tab[data-output="console"]',
   );
   if (consoleTab) {
     const copyAllBtn = document.createElement("button");
@@ -391,7 +409,7 @@ function toggleLogFilter(type: "log" | "error" | "warn" | "info"): void {
     }
     localStorage.setItem(
       "logFilters",
-      JSON.stringify(Array.from(activeFilters))
+      JSON.stringify(Array.from(activeFilters)),
     );
     applyLogFilters();
   }
@@ -400,7 +418,7 @@ function toggleLogFilter(type: "log" | "error" | "warn" | "info"): void {
 function applyLogFilters(): void {
   document.querySelectorAll(".console-entry").forEach((entry) => {
     const messageElement = entry.querySelector(
-      ".console-log, .console-error, .console-warn, .console-info"
+      ".console-log, .console-error, .console-warn, .console-info",
     );
     if (messageElement) {
       const logType = Array.from(messageElement.classList)
@@ -462,7 +480,10 @@ export function toggleSearch(mode: "find" | "replace" = "find"): void {
     }
 
     window.requestAnimationFrame(() => {
-      const selector = mode === "replace" ? '.cm-search input[name="replace"]' : '.cm-search input[name="search"]';
+      const selector =
+        mode === "replace"
+          ? '.cm-search input[name="replace"]'
+          : '.cm-search input[name="search"]';
       const field = document.querySelector(selector) as HTMLInputElement | null;
       field?.focus();
       field?.select();
@@ -472,7 +493,7 @@ export function toggleSearch(mode: "find" | "replace" = "find"): void {
 
 function debounce<T extends (...args: any[]) => any>(
   func: T,
-  wait: number
+  wait: number,
 ): (...args: Parameters<T>) => void {
   let timeout: number | undefined;
   return function (this: any, ...args: Parameters<T>): void {
@@ -513,8 +534,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // Apply dark mode to page and editors on load
   loadState();
-    setPageDarkMode(darkModeState.get());
-    updateAutoRunStatus();
+  setPageDarkMode(darkModeState.get());
+  updateAutoRunStatus();
   formatCode().catch((error) => {
     showError(`Error formatting code: ${error.message}`);
   });

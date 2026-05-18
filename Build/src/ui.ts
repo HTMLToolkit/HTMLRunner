@@ -1,12 +1,4 @@
-import {
-  editors,
-  setDarkMode,
-  setAutoRun,
-  autoRunListener,
-} from "./editor";
-import { runCode } from "./runner";
-import { debounce } from "./utils";
-import { EditorView } from "@codemirror/view";
+import { editors, setDarkMode, setAutoRun, autoRunListener } from "./editor";
 import {
   activeOutputState,
   activeTabState,
@@ -16,7 +8,7 @@ import {
 
 export const loadingEl = document.getElementById("loading") as HTMLDivElement;
 export const errorEl = document.getElementById(
-  "error-message"
+  "error-message",
 ) as HTMLDivElement;
 
 export function showLoading(): void {
@@ -44,7 +36,7 @@ export function switchTab(tab: string): void {
 
   const editorContainer = document.getElementById(`${tab}-editor-container`);
   const tabElement = document.querySelector(
-    `.editor-tabs .tab[data-tab="${tab}"]`
+    `.editor-tabs .tab[data-tab="${tab}"]`,
   );
 
   if (!editorContainer || !tabElement || !editors[tab]) {
@@ -64,14 +56,13 @@ export function switchTab(tab: string): void {
   editors[tab].view.focus();
 }
 
-
 export function switchOutput(output: string): void {
   activeOutputState.set(output);
   const previewEl = document.getElementById("preview");
   const consoleEl = document.getElementById("console");
   const targetEl = document.getElementById(output);
   const tabEl = document.querySelector(
-    `.output-tabs .tab[data-output="${output}"]`
+    `.output-tabs .tab[data-output="${output}"]`,
   );
 
   if (!previewEl || !consoleEl || !targetEl || !tabEl) {

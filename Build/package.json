@@ -4,10 +4,13 @@
   "description": "A small live HTML/JS runner with console capture.",
   "main": "index.js",
   "scripts": {
+    "start": "npm i && npm run dev",
     "dev": "vite",
     "build": "vite build",
     "build:single": "cross-env SINGLE_FILE=true npm run build",
     "preview": "vite preview",
+    "lint": "eslint \"src/**/*.{ts,js}\" --ext .ts,.js || true",
+    "make-pretty": "prettier --write \"src/**/*.{ts,js,css,html}\"",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -36,7 +39,6 @@
     "@uiw/codemirror-theme-bbedit": "^4.25.9",
     "@uiw/codemirror-theme-monokai": "^4.25.9",
     "codemirror": "^6.0.2",
-    "eslint": "^10.3.0",
     "eslint-linter-browserify": "^10.3.0",
     "file-saver": "^2.0.5",
     "fontawesome": "^5.6.3",
@@ -46,14 +48,21 @@
     "split.js": "^1.6.5"
   },
   "devDependencies": {
+    "@eslint/css": "^1.2.0",
+    "@eslint/js": "^10.0.1",
+    "@eslint/json": "^1.2.0",
+    "@eslint/markdown": "^8.0.1",
     "@types/file-saver": "^2.0.7",
     "@types/prettier": "^2.7.3",
     "@types/split.js": "^1.4.0",
     "@vite-pwa/assets-generator": "^1.0.1",
     "cross-env": "^10.1.0",
+    "eslint": "^10.4.0",
+    "globals": "^17.6.0",
     "htmlhint": "^1.9.2",
     "sharp": "^0.34.4",
     "typescript": "^6.0.3",
+    "typescript-eslint": "^8.59.4",
     "vite": "^8.0.12",
     "vite-plugin-pwa": "^1.0.3",
     "vite-plugin-singlefile": "^2.3.0"
