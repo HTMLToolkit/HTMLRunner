@@ -7,7 +7,6 @@ import { javascript } from "@codemirror/lang-javascript";
 import { autocompletion } from "@codemirror/autocomplete";
 import { foldGutter, foldKeymap, syntaxTree } from "@codemirror/language";
 import { linter, lintGutter } from "@codemirror/lint";
-import { formatCode } from "./runner";
 import { monokai } from "@uiw/codemirror-theme-monokai";
 import { bbedit } from "@uiw/codemirror-theme-bbedit";
 import { CodeMirrorEditor, Editors } from "./types";
@@ -73,7 +72,12 @@ function createEditorConfig(
         foldGutter(),
         // Linting: use syntax tree to surface parse errors from the language parser
         linter((view) => {
-          const diags: any[] = [];
+          const diags: Array<{
+            from: number;
+            to: number;
+            severity: "error" | "warning" | "info";
+            message: string;
+          }> = [];
           try {
             syntaxTree(view.state).iterate({
               enter: (node) => {
@@ -87,8 +91,8 @@ function createEditorConfig(
                 }
               },
             });
-          } catch (e) {
-            // If iterate isn't supported for some tree shapes, fail silently
+          } catch (e: unknown) {
+            console.error("Error occurred while iterating syntax tree:", e);
           }
           return diags;
         }),
@@ -103,6 +107,7 @@ function createEditorConfig(
           ".cm-content": { minHeight: "100%" },
         }),
         search(),
+        autocompletion(),
         keymap.of([
           ...defaultKeymap,
           ...foldKeymap,
@@ -134,16 +139,18 @@ function createEditorConfig(
   };
 }
 
-export function initializeEditors(): void {
-  const htmlContainer = document.getElementById(
-    "html-editor-container",
-  ) as HTMLElement;
-  const cssContainer = document.getElementById(
-    "css-editor-container",
-  ) as HTMLElement;
-  const jsContainer = document.getElementById(
-    "js-editor-container",
-  ) as HTMLElement;
+export type EditorContainers = {
+  html: HTMLElement;
+  css: HTMLElement;
+  js: HTMLElement;
+};
+
+export function initializeEditors(containers: EditorContainers): void {
+  const {
+    html: htmlContainer,
+    css: cssContainer,
+    js: jsContainer,
+  } = containers;
 
   if (!htmlContainer || !cssContainer || !jsContainer) {
     throw new Error("Editor containers not found");

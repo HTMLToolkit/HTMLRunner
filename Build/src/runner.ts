@@ -58,8 +58,12 @@ export function runCode(): void {
     // Pre-parse JS
     try {
       if (js.trim()) new Function(js);
-    } catch (syntaxError: any) {
-      logConsoleError(`SyntaxError: ${syntaxError.message}`);
+    } catch (syntaxError: unknown) {
+      const msg =
+        syntaxError instanceof Error
+          ? syntaxError.message
+          : String(syntaxError);
+      logConsoleError(`SyntaxError: ${msg}`);
       hideLoading();
       return;
     }
@@ -108,20 +112,30 @@ export function runCode(): void {
 
     const blob = new Blob([docContent], { type: "text/html; charset=utf-8" });
     const url = URL.createObjectURL(blob);
-    const preview = document.getElementById("preview");
-    if (!preview || !(preview instanceof HTMLIFrameElement)) {
+    const preview = getPreview();
+    if (!preview)
       throw new Error("Preview element not found or is not an iframe");
-    }
     preview.src = url;
     preview.addEventListener("load", () => URL.revokeObjectURL(url), {
       once: true,
     });
     switchOutput("preview");
-  } catch (error: any) {
-    showError(`Error running code: ${error.message}`);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    showError(`Error running code: ${msg}`);
   } finally {
     hideLoading();
   }
+}
+
+// Lazy cached preview iframe lookup to avoid repeated document.* calls
+let _previewEl: HTMLIFrameElement | null | undefined;
+function getPreview(): HTMLIFrameElement | null {
+  if (_previewEl === undefined) {
+    const el = document.getElementById("preview");
+    _previewEl = el instanceof HTMLIFrameElement ? el : null;
+  }
+  return _previewEl || null;
 }
 
 export async function formatCode(): Promise<void> {
@@ -135,11 +149,15 @@ export async function formatCode(): Promise<void> {
     } = await loadPrettierBundle();
 
     // Some dynamic imports expose the plugin as default export or as module namespace.
-    const pHtml = (parserHtml as any).default || parserHtml;
-    const pCss = (parserCss as any).default || parserCss;
-    const pBabel = (parserBabel as any).default || parserBabel;
+    const pHtml =
+      (parserHtml as unknown as { default?: unknown }).default || parserHtml;
+    const pCss =
+      (parserCss as unknown as { default?: unknown }).default || parserCss;
+    const pBabel =
+      (parserBabel as unknown as { default?: unknown }).default || parserBabel;
     const pEstree =
-      (prettierPluginEstree as any).default || prettierPluginEstree;
+      (prettierPluginEstree as unknown as { default?: unknown }).default ||
+      prettierPluginEstree;
 
     // Format each editor separately with error handling
     let formattedHtml = editors.html.view.state.doc.toString();
@@ -240,7 +258,8 @@ export async function formatCode(): Promise<void> {
         insert: formattedJs,
       },
     });
-  } catch (error: any) {
-    showError(`Error formatting code: ${error.message}`);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    showError(`Error formatting code: ${msg}`);
   }
 }

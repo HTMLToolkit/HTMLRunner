@@ -17,13 +17,13 @@
             <div class="logo">HTMLRunner</div>
             <div class="controls">
                 <button class="btn" id="install-button" hidden>Install App</button>
-                <button class="btn btn-run" onclick="runCode()"><i class="fas fa-play"></i> Run</button>
-                <button class="btn btn-format" onclick="formatCode()"><i class="fas fa-code"></i> Format</button>
-                <button class="btn btn-reset" onclick="resetCode()"><i class="fas fa-undo"></i> Reset</button>
-                <button class="btn btn-clear" onclick="clearConsole()"><i class="fas fa-trash"></i> Clear Console</button>
-                <button class="btn btn-download" onclick="exportAsZip()"><i class="fas fa-download"></i> Export Code</button>
-                <button class="btn btn-auto-run" onclick="toggleAutoRun()"><i class="fas fa-sync"></i> Auto-Run: <span id="auto-run-status">Off</span></button>
-                <button class="theme-toggle" onclick="toggleDarkMode()">
+                <button class="btn btn-run"><i class="fas fa-play"></i> Run</button>
+                <button class="btn btn-format"><i class="fas fa-code"></i> Format</button>
+                <button class="btn btn-reset"><i class="fas fa-undo"></i> Reset</button>
+                <button class="btn btn-clear"><i class="fas fa-trash"></i> Clear Console</button>
+                <button class="btn btn-download"><i class="fas fa-download"></i> Export Code</button>
+                <button class="btn btn-auto-run"><i class="fas fa-sync"></i> Auto-Run: <span id="auto-run-status">Off</span></button>
+                <button class="theme-toggle">
                     <i class="fas fa-moon"></i>
                     <span>Dark Mode</span>
                 </button>
@@ -32,9 +32,9 @@
         <div class="main">
             <div class="editor-panel" id="editor-panel">
                 <div class="editor-tabs">
-                    <div class="tab active" data-tab="html" onclick="switchTab('html')">HTML</div>
-                    <div class="tab" data-tab="css" onclick="switchTab('css')">CSS</div>
-                    <div class="tab" data-tab="js" onclick="switchTab('js')">JavaScript</div>
+                    <div class="tab active" data-tab="html">HTML</div>
+                    <div class="tab" data-tab="css">CSS</div>
+                    <div class="tab" data-tab="js">JavaScript</div>
                 </div>
                 <div class="editor-container" id="html-editor-container"></div>
                 <div class="editor-container" style="display: none;" id="css-editor-container"></div>
@@ -42,8 +42,8 @@
             </div>
             <div class="output-panel" id="output-panel">
                 <div class="output-tabs">
-                    <div class="tab active" data-output="preview" onclick="switchOutput('preview')">Preview</div>
-                    <div class="tab" data-output="console" onclick="switchOutput('console')">Console</div>
+                    <div class="tab active" data-output="preview">Preview</div>
+                    <div class="tab" data-output="console">Console</div>
                 </div>
                 <div class="output-content">
                     <iframe id="preview" class="preview active"></iframe>

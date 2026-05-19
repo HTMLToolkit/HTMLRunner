@@ -347,6 +347,14 @@ body.dark-mode { background-color: #1a1a1a; color: #e0e0e0; }
     font-size: 12px;
 }
 
+/* Resizing cursor classes driven by Sairin signals */
+.resizing-col {
+    cursor: col-resize !important;
+}
+.resizing-row {
+    cursor: row-resize !important;
+}
+
 .dark-mode .copy-btn {
     background: rgba(40, 40, 40, 0.9);
     border-color: #444;

@@ -1,9 +1,116 @@
-import { ConsoleMessage, StackInfo } from "./types";
+import { ConsoleMessage, StackInfo, ConsoleData } from "./types";
 import { editors } from "./editor";
+import { signal, effect, path } from "@nisoku/sairin";
+import { logFilters } from "./appState";
 
-export const consoleOutput = document.getElementById(
-  "console",
-) as HTMLDivElement;
+// Signal holding the console messages for reactive rendering
+export const consoleEntries = signal(
+  path("htmlrunner", "console", "entries"),
+  [] as ConsoleMessage[],
+);
+
+// Cached DOM node (set during initializeConsole when DOM is ready)
+let consoleOutputEl: HTMLDivElement | null = null;
+
+function renderConsoleEntries(entries: ConsoleMessage[]): void {
+  if (!consoleOutputEl) return;
+  const frag = document.createDocumentFragment();
+  for (const ev of entries) {
+    const entry = document.createElement("div");
+    const filters = logFilters.get();
+    const filtered = !filters.includes(ev.level);
+    entry.className = `console-entry${filtered ? " filtered" : ""}`;
+
+    const timestamp = document.createElement("span");
+    timestamp.className = "timestamp";
+    timestamp.textContent = new Date(ev.timestamp).toLocaleTimeString();
+
+    const message = document.createElement("span");
+    message.className = `console-${ev.level}`;
+    if (ev.data && ev.data.length) {
+      ev.data.forEach((item: ConsoleData, i: number) => {
+        if (i > 0) message.appendChild(document.createTextNode(" "));
+        if (item && typeof item === "object") {
+          message.appendChild(renderObject(item));
+        } else {
+          message.appendChild(document.createTextNode(String(item)));
+        }
+      });
+    }
+
+    // stack rendering (same logic as before)
+    const maybeStack = ev.data[1];
+    if (
+      maybeStack &&
+      typeof maybeStack === "object" &&
+      "stack" in (maybeStack as Record<string, unknown>)
+    ) {
+      const stack = document.createElement("div");
+      stack.className = "console-stack";
+      const stackVal = (maybeStack as Record<string, unknown>)["stack"];
+      const rawStack: string =
+        typeof stackVal === "string" ? stackVal : String(stackVal);
+      rawStack.split("\n").forEach((line) => {
+        const lineEl = document.createElement("div");
+        lineEl.className = "console-stack-line";
+        lineEl.textContent = line.trim();
+
+        let lineNum: number | undefined;
+        let colNum: number | undefined;
+        const patterns: RegExp[] = [
+          /\(([^)]+):(\d+):(\d+)\)$/, // at fn (file:line:col)
+          /([^@()\s]+):(\d+):(\d+)$/, // fn@file:line:col or file:line:col
+          /([^@()\s]+):(\d+)$/, // file:line
+        ];
+        for (const pat of patterns) {
+          const m = line.match(pat);
+          if (m) {
+            lineNum = parseInt(m[2], 10);
+            if (m[3]) colNum = parseInt(m[3], 10);
+            break;
+          }
+        }
+
+        if (lineNum) {
+          lineEl.classList.add("clickable");
+          lineEl.addEventListener("click", () => {
+            const ed = editors.js;
+            if (!ed) return;
+            const doc = ed.view.state.doc;
+            const maxLine = doc.lines;
+            const safeLine = Math.max(1, Math.min(lineNum as number, maxLine));
+            const lineObj = doc.line(safeLine);
+            const offset = Math.min(
+              lineObj.to,
+              lineObj.from + Math.max(0, (colNum || 1) - 1),
+            );
+            ed.view.dispatch({ selection: { anchor: offset } });
+            ed.view.focus();
+          });
+        }
+        stack.appendChild(lineEl);
+      });
+      stack.addEventListener("click", (e) => {
+        if (e.target === stack) stack.classList.toggle("expanded");
+      });
+      message.appendChild(stack);
+    }
+
+    entry.appendChild(timestamp);
+    entry.appendChild(document.createTextNode(" "));
+    entry.appendChild(message);
+    frag.appendChild(entry);
+  }
+  consoleOutputEl.replaceChildren(frag);
+  consoleOutputEl.scrollTop = consoleOutputEl.scrollHeight;
+}
+
+// Re-render console output whenever entries change
+effect(() => {
+  const entries = consoleEntries.get();
+  if (!consoleOutputEl) return;
+  renderConsoleEntries(entries);
+});
 
 // Console interceptor code that will be injected into the preview iframe
 export const consoleInterceptor = `
@@ -27,98 +134,48 @@ export const consoleInterceptor = `
 
 // Initialize console message handler
 export function initializeConsole(): void {
+  // Cache the console output element now that DOM is ready
+  consoleOutputEl = document.getElementById("console") as HTMLDivElement | null;
+  // render any existing entries immediately
+  if (consoleOutputEl) renderConsoleEntries(consoleEntries.get());
   window.addEventListener("message", handleConsoleMessage);
 }
-
 function handleConsoleMessage(event: MessageEvent<ConsoleMessage>): void {
   if (event.data.type === "console") {
-    const entry = document.createElement("div");
-    entry.className = "console-entry";
-    const timestamp = document.createElement("span");
-    timestamp.className = "timestamp";
-    timestamp.textContent = new Date(event.data.timestamp).toLocaleTimeString();
-    const message = document.createElement("span");
-    message.className = `console-${event.data.level}`;
-    if (event.data.data && event.data.data.length) {
-      event.data.data.forEach((item: any, i: number) => {
-        if (i > 0) message.appendChild(document.createTextNode(" "));
-        if (item && typeof item === "object") {
-          message.appendChild(renderObject(item));
-        } else {
-          message.appendChild(document.createTextNode(String(item)));
-        }
-      });
-    }
-    if (event.data.data[1]?.stack) {
-      const stack = document.createElement("div");
-      stack.className = "console-stack";
-      const rawStack: string = event.data.data[1].stack;
-      // Render each stack line as a clickable element when possible
-      rawStack.split("\n").forEach((line) => {
-        const lineEl = document.createElement("div");
-        lineEl.className = "console-stack-line";
-        lineEl.textContent = line.trim();
-        // Try several common stack formats, map captures to file/line/col
-        // let filePath: string | undefined;
-        let lineNum: number | undefined;
-        let colNum: number | undefined;
-
-        const patterns: RegExp[] = [
-          /\(([^)]+):(\d+):(\d+)\)$/, // at fn (file:line:col)
-          /([^@()\s]+):(\d+):(\d+)$/, // fn@file:line:col or file:line:col
-          /([^@()\s]+):(\d+)$/, // file:line
-        ];
-
-        for (const pat of patterns) {
-          const m = line.match(pat);
-          if (m) {
-            // pattern group layout: 1=file, 2=line, 3=col? maybe undefined
-            // filePath = m[1];
-            lineNum = parseInt(m[2], 10);
-            if (m[3]) colNum = parseInt(m[3], 10);
-            break;
-          }
-        }
-
-        if (lineNum) {
-          lineEl.classList.add("clickable");
-          lineEl.addEventListener("click", () => {
-            // Focus JS editor if available and set cursor
-            const ed = editors.js;
-            if (!ed) return;
-            const doc = ed.view.state.doc;
-            const maxLine = doc.lines;
-            const safeLine = Math.max(1, Math.min(lineNum as number, maxLine));
-            const lineObj = doc.line(safeLine);
-            const offset = Math.min(
-              lineObj.to,
-              lineObj.from + Math.max(0, (colNum || 1) - 1),
-            );
-            ed.view.dispatch({ selection: { anchor: offset } });
-            ed.view.focus();
-          });
-        }
-        stack.appendChild(lineEl);
-      });
-      stack.addEventListener("click", (e) => {
-        if (e.target === stack) stack.classList.toggle("expanded");
-      });
-      message.appendChild(stack);
-    }
-    entry.appendChild(timestamp);
-    entry.appendChild(document.createTextNode(" "));
-    entry.appendChild(message);
-    consoleOutput.appendChild(entry);
-    consoleOutput.scrollTop = consoleOutput.scrollHeight;
+    // Append to signal list
+    const prev = consoleEntries.get();
+    consoleEntries.set([...prev, event.data]);
   }
 }
 
-function renderObject(obj: any, level = 0, visited = new WeakSet()): Node {
+function renderObject(
+  obj: ConsoleData,
+  level = 0,
+  visited = new WeakSet<object>(),
+): Node {
   if (obj === null) return document.createTextNode("null");
-  if (typeof obj !== "object") return document.createTextNode(String(obj));
-  if (visited.has(obj)) return document.createTextNode("[Circular]");
+  if (
+    typeof obj === "string" ||
+    typeof obj === "number" ||
+    typeof obj === "boolean"
+  )
+    return document.createTextNode(String(obj));
+  if (obj instanceof Error) {
+    const errorEl = document.createElement("span");
+    errorEl.className = "console-error";
+    errorEl.textContent = `${obj.name}: ${obj.message}`;
+    if ((obj as Error).stack)
+      errorEl.textContent += `\n${(obj as Error).stack!.split("\n").slice(1).join("\n")}`;
+    const container = document.createElement("span");
+    container.appendChild(errorEl);
+    return container;
+  }
+  // At this point obj is either an array-like or object with console-able entries
+  const asObj = obj as Record<string, ConsoleData> | ConsoleData[];
+  if (visited.has(asObj as object))
+    return document.createTextNode("[Circular]");
   if (level > 3) return document.createTextNode("[...]");
-  visited.add(obj);
+  visited.add(asObj as object);
 
   const container = document.createElement("span");
   if (obj instanceof Error) {
@@ -133,16 +190,28 @@ function renderObject(obj: any, level = 0, visited = new WeakSet()): Node {
 
   const preview = document.createElement("span");
   preview.className = "console-object";
-  preview.textContent = Array.isArray(obj) ? `Array(${obj.length})` : "{...}";
+  preview.textContent = Array.isArray(asObj)
+    ? `Array(${(asObj as ConsoleData[]).length})`
+    : "{...}";
   const content = document.createElement("div");
   content.className = "console-object-content";
 
-  Object.entries(obj).forEach(([key, value]) => {
-    const prop = document.createElement("div");
-    prop.textContent = `${key}: `;
-    prop.appendChild(renderObject(value, level + 1, visited));
-    content.appendChild(prop);
-  });
+  if (Array.isArray(asObj)) {
+    asObj.forEach((v: ConsoleData) => {
+      const prop = document.createElement("div");
+      prop.appendChild(renderObject(v, level + 1, visited));
+      content.appendChild(prop);
+    });
+  } else {
+    Object.entries(asObj as Record<string, ConsoleData>).forEach(
+      ([key, value]) => {
+        const prop = document.createElement("div");
+        prop.textContent = `${key}: `;
+        prop.appendChild(renderObject(value, level + 1, visited));
+        content.appendChild(prop);
+      },
+    );
+  }
 
   preview.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -155,30 +224,16 @@ function renderObject(obj: any, level = 0, visited = new WeakSet()): Node {
 }
 
 export function clearConsole(): void {
-  consoleOutput.innerHTML = "";
+  consoleEntries.set([]);
 }
 
 export function logConsoleError(message: string, stack: StackInfo = {}): void {
-  const entry = document.createElement("div");
-  entry.className = "console-entry";
-  const timestamp = document.createElement("span");
-  timestamp.className = "timestamp";
-  timestamp.textContent = new Date().toLocaleTimeString();
-  const msg = document.createElement("span");
-  msg.className = "console-error";
-  msg.textContent = message;
-  if (stack.stack) {
-    const stackEl = document.createElement("div");
-    stackEl.className = "console-stack";
-    stackEl.textContent = stack.stack;
-    stackEl.addEventListener("click", () =>
-      stackEl.classList.toggle("expanded"),
-    );
-    msg.appendChild(stackEl);
-  }
-  entry.appendChild(timestamp);
-  entry.appendChild(document.createTextNode(" "));
-  entry.appendChild(msg);
-  consoleOutput.appendChild(entry);
-  consoleOutput.scrollTop = consoleOutput.scrollHeight;
+  const prev = consoleEntries.get();
+  const entry: ConsoleMessage = {
+    type: "console",
+    level: "error",
+    data: [message, stack],
+    timestamp: new Date().toISOString(),
+  };
+  consoleEntries.set([...prev, entry]);
 }

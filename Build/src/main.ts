@@ -1,5 +1,5 @@
-import { initializeEditors, setDarkMode, setAutoRun } from "./editor";
 import "@fortawesome/fontawesome-free/css/all.min.css";
+import { initializeEditors } from "./editor";
 import {
   openSearchPanel,
   searchPanelOpen,
@@ -8,53 +8,55 @@ import {
 import Split from "split.js";
 import { copyToClipboard } from "./utils";
 import { editors } from "./editor";
-import { ConsoleMessage } from "./types";
-import { consoleOutput, clearConsole } from "./console";
+import { clearConsole, initializeConsole, consoleEntries } from "./console";
 import { runCode, formatCode } from "./runner";
-import { resetCode, loadState } from "./appState";
+import {
+  resetCode,
+  loadState,
+  autoRunText,
+  htmlVisible,
+  cssVisible,
+  jsVisible,
+  tabHtmlClass,
+  tabCssClass,
+  tabJsClass,
+  previewClass,
+  consoleClass,
+  bodyClass,
+  activeTabState,
+  activeOutputState,
+  loadingVisible,
+  errorMessage,
+  errorVisible,
+  themeLabel,
+  themeIconClass,
+  isResizing,
+  resizingClass,
+  logFilters,
+  splitSizesState,
+  globalActions,
+} from "./appState";
 import {
   switchTab,
   switchOutput,
   showError,
   updateThemeIcon,
-  setPageDarkMode,
+  toggleAutoRun,
+  toggleDarkMode,
 } from "./ui";
-import {
-  activeTabState,
-  autoRunState,
-  darkModeState,
-  splitSizesState,
-} from "./appState";
 import JSZip from "jszip";
 import { saveAs } from "file-saver";
-
-// Type declarations for global window properties
-declare global {
-  interface Window {
-    prettierPlugins: any[];
-    runCode: () => void;
-    clearConsole: () => void;
-    resetCode: () => void;
-    formatCode: () => Promise<void>;
-    toggleAutoRun: () => void;
-    toggleDarkMode: () => void;
-    switchTab: (tab: string) => void;
-    switchOutput: (output: string) => void;
-    exportAsZip: () => Promise<void>;
-    copyAllConsole: () => void;
-    copyEditorContent: (editor: string) => void;
-    toggleSearch: () => void;
-  }
-}
+import {
+  bindEvent,
+  bindText,
+  bindVisibility,
+  bindClass,
+  effect,
+} from "@nisoku/sairin";
 
 let splitInstance: Split.Instance;
-const loadingEl = document.getElementById("loading") as HTMLDivElement;
-const errorEl = document.getElementById("error-message") as HTMLDivElement;
-const preview = document.getElementById("preview") as HTMLIFrameElement;
-
-if (!consoleOutput || !loadingEl || !errorEl || !preview) {
-  throw new Error("Required DOM elements not found");
-}
+let editorPanelEl: HTMLElement | null = null;
+let outputPanelEl: HTMLElement | null = null;
 
 // Initialize Split.js
 function initializeSplit() {
@@ -62,10 +64,13 @@ function initializeSplit() {
     splitInstance.destroy();
   }
 
-  const elements = ["#editor-panel", "#output-panel"];
   const direction = window.innerWidth <= 768 ? "vertical" : "horizontal";
 
-  if (!elements.every((id) => document.querySelector(id))) {
+  const elementEls = [
+    editorPanelEl || document.getElementById("editor-panel"),
+    outputPanelEl || document.getElementById("output-panel"),
+  ];
+  if (!elementEls.every((el) => el instanceof HTMLElement)) {
     console.error("Split.js elements not found");
     return;
   }
@@ -78,7 +83,8 @@ function initializeSplit() {
       ? _sizes
       : [50, 50];
 
-  splitInstance = Split(elements, {
+  // pass the element nodes directly to Split.js
+  splitInstance = Split(elementEls as HTMLElement[], {
     sizes,
     minSize: 200,
     gutterSize: 10,
@@ -92,14 +98,18 @@ function initializeSplit() {
       "flex-basis": `${gutterSize}px`,
     }),
     onDragStart: function () {
-      document.body.style.cursor =
-        direction === "horizontal" ? "col-resize" : "row-resize";
+      // Use signal-driven class instead of direct style mutation
+      resizingClass.set(
+        direction === "horizontal" ? "resizing-col" : "resizing-row",
+      );
+      isResizing.set(true);
     },
     onDrag: function () {
       Object.values(editors).forEach((editor) => editor.view.requestMeasure());
     },
     onDragEnd: function (sizes) {
-      document.body.style.cursor = "";
+      resizingClass.set("");
+      isResizing.set(false);
       splitSizesState.set(sizes);
       Object.values(editors).forEach((editor) => editor.view.requestMeasure());
     },
@@ -151,140 +161,20 @@ function initializeSearchControls(tabsContainer: Element): void {
   searchBtn.className = "search-btn";
   searchBtn.innerHTML = '<i class="fas fa-search"></i>';
   searchBtn.title = "Search (Ctrl+F)";
-  searchBtn.onclick = () => toggleSearch("find");
+  bindEvent(searchBtn, "click", () => toggleSearch("find"));
 
   const replaceBtn = document.createElement("button");
   replaceBtn.className = "replace-btn";
   replaceBtn.innerHTML = '<i class="fas fa-exchange-alt"></i>';
   replaceBtn.title = "Replace (Ctrl+H)";
-  replaceBtn.onclick = () => toggleSearch("replace");
+  bindEvent(replaceBtn, "click", () => toggleSearch("replace"));
 
   searchControls.appendChild(searchBtn);
   searchControls.appendChild(replaceBtn);
   tabsContainer.appendChild(searchControls);
 }
 
-// Console message handling
-window.addEventListener("message", (event: MessageEvent<ConsoleMessage>) => {
-  if (event.data.type === "console") {
-    const entry = document.createElement("div");
-    entry.className = `console-entry ${!activeFilters.has(event.data.level) ? "filtered" : ""}`;
-
-    const timestamp = document.createElement("span");
-    timestamp.className = "timestamp";
-    timestamp.textContent = new Date(event.data.timestamp).toLocaleTimeString();
-
-    const message = document.createElement("span");
-    message.className = `console-${event.data.level}`;
-    if (event.data.data && event.data.data.length) {
-      event.data.data.forEach((item: any, i: number) => {
-        if (i > 0) message.appendChild(document.createTextNode(" "));
-        if (item && typeof item === "object") {
-          message.appendChild(renderObject(item));
-        } else {
-          message.appendChild(document.createTextNode(String(item)));
-        }
-      });
-    }
-
-    if (event.data.data[1]?.stack) {
-      const stack = document.createElement("div");
-      stack.className = "console-stack";
-      stack.textContent = event.data.data[1].stack;
-      stack.addEventListener("click", () => stack.classList.toggle("expanded"));
-      message.appendChild(stack);
-    }
-
-    const copyBtn = document.createElement("button");
-    copyBtn.className = "copy-btn";
-    copyBtn.innerHTML = '<i class="far fa-copy"></i>';
-    copyBtn.addEventListener("click", () => {
-      const text = event.data.data
-        .map((item: any) =>
-          typeof item === "object"
-            ? JSON.stringify(item, null, 2)
-            : String(item),
-        )
-        .join(" ");
-      copyToClipboard(text);
-      copyBtn.innerHTML = '<i class="fas fa-check"></i>';
-      setTimeout(() => {
-        copyBtn.innerHTML = '<i class="far fa-copy"></i>';
-      }, 2000);
-    });
-
-    entry.appendChild(timestamp);
-    entry.appendChild(document.createTextNode(" "));
-    entry.appendChild(message);
-    entry.appendChild(copyBtn);
-    consoleOutput.appendChild(entry);
-    consoleOutput.scrollTop = consoleOutput.scrollHeight;
-  }
-});
-
-// Render objects with depth limit and circular reference handling
-function renderObject(obj: any, level = 0, visited = new WeakSet()): Node {
-  if (obj === null) return document.createTextNode("null");
-  if (typeof obj !== "object") return document.createTextNode(String(obj));
-  if (visited.has(obj)) return document.createTextNode("[Circular]");
-  if (level > 3) return document.createTextNode("[...]");
-  visited.add(obj);
-
-  const container = document.createElement("span");
-  if (obj instanceof Error) {
-    const errorEl = document.createElement("span");
-    errorEl.className = "console-error";
-    errorEl.textContent = `${obj.name}: ${obj.message}`;
-    if (obj.stack)
-      errorEl.textContent += `\n${obj.stack.split("\n").slice(1).join("\n")}`;
-    container.appendChild(errorEl);
-    return container;
-  }
-
-  const preview = document.createElement("span");
-  preview.className = "console-object";
-  preview.textContent = Array.isArray(obj) ? `Array(${obj.length})` : "{...}";
-  const content = document.createElement("div");
-  content.className = "console-object-content";
-
-  Object.entries(obj).forEach(([key, value]) => {
-    const prop = document.createElement("div");
-    prop.textContent = `${key}: `;
-    prop.appendChild(renderObject(value, level + 1, visited));
-    content.appendChild(prop);
-  });
-
-  preview.addEventListener("click", (e) => {
-    e.stopPropagation();
-    preview.classList.toggle("expanded");
-  });
-
-  container.appendChild(preview);
-  container.appendChild(content);
-  return container;
-}
-
 // Toggle auto-run
-function toggleAutoRun(): void {
-  const newAutoRun = !autoRunState.get();
-  setAutoRun(newAutoRun);
-  updateAutoRunStatus();
-}
-
-function updateAutoRunStatus(): void {
-  const statusEl = document.getElementById("auto-run-status");
-  if (statusEl) {
-    statusEl.textContent = autoRunState.get() ? "On" : "Off";
-  }
-}
-
-// Toggle dark mode
-function toggleDarkMode(): void {
-  const newDarkMode = !darkModeState.get();
-  setDarkMode(newDarkMode);
-  document.body.classList.toggle("dark-mode", newDarkMode);
-  updateThemeIcon();
-}
 
 // Export editors' content as ZIP
 async function exportAsZip() {
@@ -330,17 +220,13 @@ async function exportAsZip() {
 
 // Copy console content
 function copyAllConsole(): void {
-  const entries = Array.from(consoleOutput.children);
+  const entries = consoleEntries.get();
   const text = entries
-    .map((entry) => {
-      const timestamp = entry.querySelector(".timestamp")?.textContent || "";
-      const message = Array.from(
-        entry.querySelectorAll(
-          ".console-log, .console-error, .console-warn, .console-info",
-        ),
-      )
-        .map((el) => el.textContent)
-        .join("");
+    .map((ev) => {
+      const timestamp = new Date(ev.timestamp).toLocaleTimeString();
+      const message = ev.data
+        .map((d) => (typeof d === "object" ? JSON.stringify(d) : String(d)))
+        .join(" ");
       return `${timestamp} ${message}`;
     })
     .join("\n");
@@ -353,15 +239,28 @@ function copyEditorContent(editor: string): void {
   copyToClipboard(content);
 }
 
-// Initialize copy buttons
-function initializeCopyButtons(): void {
-  ["html", "css", "js"].forEach((editorType) => {
-    const container = document.getElementById(`${editorType}-editor-container`);
+// Initialize copy buttons for each editor and a "Copy All" for console
+function initializeCopyButtons(
+  editorContainers?: {
+    html?: HTMLElement | null;
+    css?: HTMLElement | null;
+    js?: HTMLElement | null;
+  },
+  outputConsoleTab?: Element | null,
+): void {
+  (["html", "css", "js"] as const).forEach((editorType) => {
+    const containerFromParam =
+      (editorContainers as Record<string, HTMLElement | null> | undefined)?.[
+        editorType
+      ] ?? null;
+    const container =
+      containerFromParam ||
+      document.getElementById(`${editorType}-editor-container`);
     if (container) {
       const copyBtn = document.createElement("button");
       copyBtn.className = "copy-btn";
       copyBtn.innerHTML = '<i class="far fa-copy"></i>';
-      copyBtn.addEventListener("click", () => {
+      bindEvent(copyBtn, "click", () => {
         copyEditorContent(editorType);
         copyBtn.innerHTML = '<i class="fas fa-check"></i>';
         setTimeout(() => {
@@ -371,10 +270,9 @@ function initializeCopyButtons(): void {
       container.appendChild(copyBtn);
     }
   });
-
-  const consoleTab = document.querySelector(
-    '.output-tabs .tab[data-output="console"]',
-  );
+  const consoleTab =
+    outputConsoleTab ||
+    document.querySelector('.output-tabs .tab[data-output="console"]');
   if (consoleTab) {
     const copyAllBtn = document.createElement("button");
     copyAllBtn.className = "copy-btn";
@@ -382,7 +280,7 @@ function initializeCopyButtons(): void {
     copyAllBtn.style.marginLeft = "auto";
     copyAllBtn.style.opacity = "1";
     copyAllBtn.innerHTML = '<i class="far fa-copy"></i> Copy All';
-    copyAllBtn.addEventListener("click", () => {
+    bindEvent(copyAllBtn, "click", () => {
       copyAllConsole();
       copyAllBtn.innerHTML = '<i class="fas fa-check"></i> Copied!';
       setTimeout(() => {
@@ -393,79 +291,66 @@ function initializeCopyButtons(): void {
   }
 }
 
-// Log filter state
-let activeFilters = new Set(["log", "error", "warn", "info"]);
+// Console message handling is delegated to `Build/src/console.ts` (reactive rendering).
+function initializeLogFilters(outputTabsEl?: Element | null): void {
+  const consoleTab = outputTabsEl || document.querySelector(".output-tabs");
+  if (!consoleTab) return;
 
-function toggleLogFilter(type: "log" | "error" | "warn" | "info"): void {
-  const button = document.querySelector(`.filter-toggle.${type}`);
-  if (button) {
-    const isActive = button.classList.contains("active");
-    if (isActive) {
-      activeFilters.delete(type);
-      button.classList.remove("active");
-    } else {
-      activeFilters.add(type);
-      button.classList.add("active");
-    }
-    localStorage.setItem(
-      "logFilters",
-      JSON.stringify(Array.from(activeFilters)),
-    );
-    applyLogFilters();
-  }
-}
+  const filtersDiv = document.createElement("div");
+  filtersDiv.className = "console-filters";
 
-function applyLogFilters(): void {
-  document.querySelectorAll(".console-entry").forEach((entry) => {
-    const messageElement = entry.querySelector(
-      ".console-log, .console-error, .console-warn, .console-info",
-    );
-    if (messageElement) {
-      const logType = Array.from(messageElement.classList)
-        .find((cls) => cls.startsWith("console-"))
-        ?.replace("console-", "");
-      if (logType && !activeFilters.has(logType)) {
-        entry.className = "console-entry filtered";
-      } else {
-        entry.className = "console-entry";
+  (["log", "error", "warn", "info"] as const).forEach((type) => {
+    const button = document.createElement("button");
+    button.className = `filter-toggle ${type}`;
+    const icon =
+      type === "log"
+        ? "terminal"
+        : type === "error"
+          ? "times-circle"
+          : type === "warn"
+            ? "exclamation-triangle"
+            : "info-circle";
+    button.innerHTML = `<i class="fas fa-${icon}"></i>${type.charAt(0).toUpperCase() + type.slice(1)}`;
+
+    bindEvent(button, "click", () => {
+      const prev = logFilters.get();
+      const set = new Set(prev);
+      if (set.has(type)) set.delete(type);
+      else set.add(type);
+      const arr = Array.from(set);
+      logFilters.set(arr);
+      try {
+        localStorage.setItem("logFilters", JSON.stringify(arr));
+      } catch (e) {
+        console.error("Failed to save log filters to localStorage:", e);
+      }
+    });
+
+    filtersDiv.appendChild(button);
+  });
+
+  consoleTab.insertBefore(filtersDiv, consoleTab.lastElementChild);
+
+  const btnMap = new Map<string, HTMLButtonElement>();
+  Array.from(filtersDiv.children).forEach((c) => {
+    if (c instanceof HTMLButtonElement) {
+      const classes = c.className.split(" ");
+      for (const cls of classes) {
+        if (["log", "error", "warn", "info"].includes(cls)) {
+          btnMap.set(cls, c);
+          break;
+        }
       }
     }
   });
-}
 
-function initializeLogFilters(): void {
-  try {
-    const savedFilters = localStorage.getItem("logFilters");
-    if (savedFilters) {
-      activeFilters = new Set(JSON.parse(savedFilters));
+  effect(() => {
+    const active = new Set(logFilters.get());
+    for (const [type, btn] of btnMap) {
+      if (active.has(type)) btn.classList.add("active");
+      else btn.classList.remove("active");
     }
-  } catch (e) {
-    console.error("Failed to load log filters:", e);
-  }
-
-  const consoleTab = document.querySelector(".output-tabs");
-  if (consoleTab) {
-    const filtersDiv = document.createElement("div");
-    filtersDiv.className = "console-filters";
-
-    ["log", "error", "warn", "info"].forEach((type) => {
-      const button = document.createElement("button");
-      button.className = `filter-toggle ${type} ${activeFilters.has(type) ? "active" : ""}`;
-      button.innerHTML = `<i class="fas fa-${
-        type === "log"
-          ? "terminal"
-          : type === "error"
-            ? "times-circle"
-            : type === "warn"
-              ? "exclamation-triangle"
-              : "info-circle"
-      }"></i>${type.charAt(0).toUpperCase() + type.slice(1)}`;
-      button.onclick = () => toggleLogFilter(type as any);
-      filtersDiv.appendChild(button);
-    });
-
-    consoleTab.insertBefore(filtersDiv, consoleTab.lastElementChild);
-  }
+  });
 }
 
 // Search toggle function
@@ -491,19 +376,8 @@ export function toggleSearch(mode: "find" | "replace" = "find"): void {
   }
 }
 
-function debounce<T extends (...args: any[]) => any>(
-  func: T,
-  wait: number,
-): (...args: Parameters<T>) => void {
-  let timeout: number | undefined;
-  return function (this: any, ...args: Parameters<T>): void {
-    if (timeout) window.clearTimeout(timeout);
-    timeout = window.setTimeout(() => func.apply(this, args), wait);
-  };
-}
-
-// Expose functions to window object
-Object.assign(window, {
+// Register global actions in Sairin
+globalActions.set({
   runCode,
   clearConsole,
   resetCode,
@@ -520,22 +394,217 @@ Object.assign(window, {
 
 // Initialize
 document.addEventListener("DOMContentLoaded", async () => {
-  initializeEditors();
-  initializeCopyButtons();
+  // Cache editor containers before initializing editors
+  const htmlContainer = document.getElementById("html-editor-container");
+  const cssContainer = document.getElementById("css-editor-container");
+  const jsContainer = document.getElementById("js-editor-container");
+
+  if (!htmlContainer || !cssContainer || !jsContainer) {
+    console.error("Editor containers not found");
+  } else {
+    initializeEditors({
+      html: htmlContainer,
+      css: cssContainer,
+      js: jsContainer,
+    });
+  }
+  const outputConsoleTabElEarly = document.querySelector(
+    '.output-tabs .tab[data-output="console"]',
+  ) as Element | null;
+  initializeCopyButtons(
+    { html: htmlContainer, css: cssContainer, js: jsContainer },
+    outputConsoleTabElEarly,
+  );
+  // Cache panel elements for Split.js
+  editorPanelEl = document.getElementById("editor-panel");
+  outputPanelEl = document.getElementById("output-panel");
   initializeSplit();
-  updateAutoRunStatus();
-  initializeLogFilters();
+  initializeLogFilters(document.querySelector(".output-tabs"));
+  initializeConsole();
   addGlobalSearchShortcuts();
+
+  // Lookup elements now that DOM is ready
+  const loadingEl = document.getElementById("loading") as HTMLDivElement | null;
+  const errorEl = document.getElementById(
+    "error-message",
+  ) as HTMLDivElement | null;
 
   const editorTabs = document.querySelector(".editor-tabs");
   if (editorTabs) {
     initializeSearchControls(editorTabs);
   }
 
-  // Apply dark mode to page and editors on load
+  // Cache frequently-used DOM nodes to avoid repeated queries
+  const tabHtmlEl = document.querySelector(
+    '.editor-tabs .tab[data-tab="html"]',
+  ) as HTMLElement | null;
+  const tabCssEl = document.querySelector(
+    '.editor-tabs .tab[data-tab="css"]',
+  ) as HTMLElement | null;
+  const tabJsEl = document.querySelector(
+    '.editor-tabs .tab[data-tab="js"]',
+  ) as HTMLElement | null;
+
+  const outputPreviewTabEl = document.querySelector(
+    '.output-tabs .tab[data-output="preview"]',
+  ) as HTMLElement | null;
+  const outputConsoleTabEl = document.querySelector(
+    '.output-tabs .tab[data-output="console"]',
+  ) as HTMLElement | null;
+
+  const previewEl = document.getElementById(
+    "preview",
+  ) as HTMLIFrameElement | null;
+  const consoleEl = document.getElementById("console") as HTMLDivElement | null;
+
+  const bodyEl = document.body as HTMLElement;
+
+  const actions = globalActions.get();
+
+  const runBtn = document.querySelector(".btn-run") as HTMLButtonElement | null;
+  if (runBtn) bindEvent(runBtn, "click", () => actions.runCode());
+
+  const formatBtn = document.querySelector(
+    ".btn-format",
+  ) as HTMLButtonElement | null;
+  if (formatBtn) bindEvent(formatBtn, "click", () => void actions.formatCode());
+
+  const resetBtn = document.querySelector(
+    ".btn-reset",
+  ) as HTMLButtonElement | null;
+  if (resetBtn) bindEvent(resetBtn, "click", () => actions.resetCode());
+
+  const clearBtn = document.querySelector(
+    ".btn-clear",
+  ) as HTMLButtonElement | null;
+  if (clearBtn) bindEvent(clearBtn, "click", () => actions.clearConsole());
+
+  const downloadBtn = document.querySelector(
+    ".btn-download",
+  ) as HTMLButtonElement | null;
+  if (downloadBtn)
+    bindEvent(downloadBtn, "click", () => void actions.exportAsZip());
+
+  const autoRunBtn = document.querySelector(
+    ".btn-auto-run",
+  ) as HTMLButtonElement | null;
+  if (autoRunBtn) bindEvent(autoRunBtn, "click", () => actions.toggleAutoRun());
+
+  const themeBtn = document.querySelector(
+    ".theme-toggle",
+  ) as HTMLButtonElement | null;
+  if (themeBtn) bindEvent(themeBtn, "click", () => actions.toggleDarkMode());
+
+  // Editor tab clicks (delegated)
+  const editorTabsContainer = document.querySelector(
+    ".editor-tabs",
+  ) as HTMLElement | null;
+  if (editorTabsContainer) {
+    editorTabsContainer.addEventListener("click", (e) => {
+      const el = e.target as Element | null;
+      const target = el?.closest(".tab") as HTMLElement | null;
+      if (!target) return;
+      const tab = target.dataset.tab;
+      if (tab) actions.switchTab(tab);
+    });
+  }
+
+  // Output tab clicks (delegated)
+  const outputTabsContainer = document.querySelector(
+    ".output-tabs",
+  ) as HTMLElement | null;
+  if (outputTabsContainer) {
+    outputTabsContainer.addEventListener("click", (e) => {
+      const el = e.target as Element | null;
+      const target = el?.closest(".tab") as HTMLElement | null;
+      if (!target) return;
+      const out = target.dataset.output;
+      if (out) actions.switchOutput(out);
+    });
+  }
+
+  // Bind UI elements to centralized appState signals
+  const autoRunEl = document.getElementById("auto-run-status");
+  if (autoRunEl) bindText(autoRunEl, autoRunText);
+
+  if (htmlContainer) {
+    effect(() => {
+      const visible = htmlVisible.get();
+      htmlContainer.style.display = visible ? "" : "none";
+      if (visible) {
+        setTimeout(() => editors.html?.view.requestMeasure(), 0);
+      }
+    });
+  }
+  if (cssContainer) {
+    effect(() => {
+      const visible = cssVisible.get();
+      cssContainer.style.display = visible ? "" : "none";
+      if (visible) {
+        setTimeout(() => editors.css?.view.requestMeasure(), 0);
+      }
+    });
+  }
+  if (jsContainer) {
+    effect(() => {
+      const visible = jsVisible.get();
+      jsContainer.style.display = visible ? "" : "none";
+      if (visible) {
+        setTimeout(() => editors.js?.view.requestMeasure(), 0);
+      }
+    });
+  }
+
+  // Update editor tab classes reactively
+  effect(() => {
+    if (tabHtmlEl) tabHtmlEl.className = tabHtmlClass.get();
+  });
+  effect(() => {
+    if (tabCssEl) tabCssEl.className = tabCssClass.get();
+  });
+  effect(() => {
+    if (tabJsEl) tabJsEl.className = tabJsClass.get();
+  });
+
+  // Update output tab classes reactively
+  effect(() => {
+    if (outputPreviewTabEl) outputPreviewTabEl.className = previewClass.get();
+  });
+  effect(() => {
+    if (outputConsoleTabEl) outputConsoleTabEl.className = consoleClass.get();
+  });
+
+  // Update output content visibility (iframe / console) based on activeOutputState
+  effect(() => {
+    const out = activeOutputState.get();
+    if (previewEl)
+      previewEl.className = out === "preview" ? "preview active" : "preview";
+    if (consoleEl)
+      consoleEl.className = out === "console" ? "console active" : "console";
+  });
+
+  bindClass(bodyEl, bodyClass);
+
+  // Loading and error bindings
+  if (loadingEl) bindVisibility(loadingEl, loadingVisible);
+  if (errorEl) {
+    bindText(errorEl, errorMessage);
+    bindVisibility(errorEl, errorVisible);
+  }
+
+  // Theme icon + label bindings
+  const themeIcon = document.querySelector(
+    ".theme-toggle i",
+  ) as HTMLElement | null;
+  const themeLabelEl = document.querySelector(
+    ".theme-toggle span",
+  ) as HTMLElement | null;
+  if (themeLabelEl) bindText(themeLabelEl, themeLabel);
+  if (themeIcon) bindClass(themeIcon, themeIconClass);
+
+  // Apply persisted state and ensure UI icons match
   loadState();
-  setPageDarkMode(darkModeState.get());
-  updateAutoRunStatus();
+  updateThemeIcon();
   formatCode().catch((error) => {
     showError(`Error formatting code: ${error.message}`);
   });

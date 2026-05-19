@@ -3,7 +3,7 @@ import { EditorView } from "@codemirror/view";
 
 declare global {
   interface Window {
-    prettierPlugins: any[];
+    prettierPlugins: unknown[];
   }
 }
 
@@ -39,15 +39,48 @@ export interface State {
   splitSizes: number[];
   darkMode: boolean;
   autoRun: boolean;
+  logFilters?: string[];
 }
 
 export interface ConsoleMessage {
   type: "console";
   level: "log" | "error" | "warn" | "info";
-  data: any[];
+  data: ConsoleData[];
   timestamp: string;
 }
 
+// Recursive console data types (use interfaces to avoid circular alias error)
+export type ConsolePrimitive = string | number | boolean | null;
+export interface ConsoleObject {
+  [key: string]: ConsoleData;
+}
+export interface ConsoleArray {
+  [index: number]: ConsoleData;
+  length: number;
+}
+export type ConsoleData =
+  | ConsolePrimitive
+  | { stack?: string }
+  | { name: string; message: string; stack?: string }
+  | Error
+  | ConsoleObject
+  | ConsoleArray;
+
 export interface StackInfo {
   stack?: string;
+}
+
+export interface Actions {
+  runCode: () => void;
+  clearConsole: () => void;
+  resetCode: (skipConfirmation?: boolean) => void;
+  formatCode: () => Promise<void>;
+  toggleAutoRun: () => void;
+  toggleDarkMode: () => void;
+  switchTab: (tab: string) => void;
+  switchOutput: (output: string) => void;
+  exportAsZip: () => Promise<void>;
+  copyAllConsole: () => void;
+  copyEditorContent: (editor: string) => void;
+  toggleSearch: (mode?: "find" | "replace") => void;
 }
