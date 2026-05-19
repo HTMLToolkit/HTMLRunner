@@ -1,12 +1,13 @@
 import { Compartment, EditorState, Extension } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
-import { defaultKeymap, toggleComment } from "@codemirror/commands";
+import { defaultKeymap, toggleComment, history, undo, redo } from "@codemirror/commands";
 import { html } from "@codemirror/lang-html";
 import { css } from "@codemirror/lang-css";
 import { javascript } from "@codemirror/lang-javascript";
 import { autocompletion } from "@codemirror/autocomplete";
-import { foldGutter, foldKeymap, syntaxTree } from "@codemirror/language";
+import { foldGutter, foldKeymap } from "@codemirror/language";
 import { linter, lintGutter } from "@codemirror/lint";
+import { lintWithBiome } from "./biome";
 import { monokai } from "@uiw/codemirror-theme-monokai";
 import { bbedit } from "@uiw/codemirror-theme-bbedit";
 import { CodeMirrorEditor, Editors } from "./types";
@@ -60,6 +61,7 @@ function createEditorConfig(
   container: HTMLElement,
   content: string,
   contentState: typeof htmlState | typeof cssState | typeof jsState,
+  fileName = "file.txt",
 ): CodeMirrorEditor {
   const themeCompartment = new Compartment();
   const autoRunCompartment = new Compartment();
@@ -69,32 +71,17 @@ function createEditorConfig(
       doc: content,
       extensions: [
         lineNumbers(),
+        history(),
         foldGutter(),
-        // Linting: use syntax tree to surface parse errors from the language parser
-        linter((view) => {
-          const diags: Array<{
-            from: number;
-            to: number;
-            severity: "error" | "warning" | "info";
-            message: string;
-          }> = [];
+        linter(async (view) => {
+          const text = view.state.doc.toString();
           try {
-            syntaxTree(view.state).iterate({
-              enter: (node) => {
-                if (node.type.isError) {
-                  diags.push({
-                    from: node.from,
-                    to: node.to,
-                    severity: "error",
-                    message: "Syntax error",
-                  });
-                }
-              },
-            });
-          } catch (e: unknown) {
-            console.error("Error occurred while iterating syntax tree:", e);
+            const biomeDiags = await lintWithBiome(text, fileName);
+            return biomeDiags || [];
+          } catch (err) {
+            console.error("Biome linting failed:", err);
+            return [];
           }
-          return diags;
         }),
         lintGutter(),
         language,
@@ -112,6 +99,9 @@ function createEditorConfig(
           ...defaultKeymap,
           ...foldKeymap,
           { key: "Mod-/", run: toggleComment },
+          { key: "Mod-z", run: undo },
+          { key: "Mod-y", run: redo },
+          { key: "Mod-Shift-z", run: redo },
         ]),
         autoRunCompartment.of(autoRunState.get() ? autoRunListener : []),
         EditorView.updateListener.of((update) => {
@@ -161,17 +151,20 @@ export function initializeEditors(containers: EditorContainers): void {
     htmlContainer,
     htmlState.get(),
     htmlState,
+    "index.html",
   );
   editors.css = createEditorConfig(
     css(),
     cssContainer,
     cssState.get(),
     cssState,
+    "styles.css",
   );
   editors.js = createEditorConfig(
     javascript(),
     jsContainer,
     jsState.get(),
     jsState,
+    "script.js",
   );
 }

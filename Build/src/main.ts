@@ -10,6 +10,7 @@ import { copyToClipboard } from "./utils";
 import { editors } from "./editor";
 import { clearConsole, initializeConsole, consoleEntries } from "./console";
 import { runCode, formatCode } from "./runner";
+import { undo as cmUndo, redo as cmRedo } from "@codemirror/commands";
 import {
   resetCode,
   loadState,
@@ -369,7 +370,9 @@ export function toggleSearch(mode: "find" | "replace" = "find"): void {
         mode === "replace"
           ? '.cm-search input[name="replace"]'
           : '.cm-search input[name="search"]';
-      const field = document.querySelector(selector) as HTMLInputElement | null;
+      // Scope lookup to the visible editor's DOM to avoid matching hidden panels
+      const root = editor.dom as HTMLElement;
+      const field = root.querySelector(selector) as HTMLInputElement | null;
       field?.focus();
       field?.select();
     });
@@ -391,6 +394,23 @@ globalActions.set({
   copyEditorContent,
   toggleSearch,
 });
+
+// Provide undo/redo commands that operate on the active editor (or specific editor name)
+function undoAction(editorName?: string): void {
+  const name = editorName || activeTabState.get();
+  const ed = editors[name];
+  if (ed) cmUndo(ed.view);
+}
+
+function redoAction(editorName?: string): void {
+  const name = editorName || activeTabState.get();
+  const ed = editors[name];
+  if (ed) cmRedo(ed.view);
+}
+
+// Register undo/redo in global actions
+const prevActions = globalActions.get();
+globalActions.set({ ...prevActions, undo: undoAction, redo: redoAction });
 
 // Initialize
 document.addEventListener("DOMContentLoaded", async () => {
@@ -415,6 +435,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     { html: htmlContainer, css: cssContainer, js: jsContainer },
     outputConsoleTabElEarly,
   );
+
+  // Apply persisted state early so layout (Split) can use saved sizes
+  loadState();
+  updateThemeIcon();
+
   // Cache panel elements for Split.js
   editorPanelEl = document.getElementById("editor-panel");
   outputPanelEl = document.getElementById("output-panel");
@@ -602,9 +627,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (themeLabelEl) bindText(themeLabelEl, themeLabel);
   if (themeIcon) bindClass(themeIcon, themeIconClass);
 
-  // Apply persisted state and ensure UI icons match
-  loadState();
-  updateThemeIcon();
   formatCode().catch((error) => {
     showError(`Error formatting code: ${error.message}`);
   });

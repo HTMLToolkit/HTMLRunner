@@ -83,4 +83,6 @@ export interface Actions {
   copyAllConsole: () => void;
   copyEditorContent: (editor: string) => void;
   toggleSearch: (mode?: "find" | "replace") => void;
+  undo?: (editor?: string) => void;
+  redo?: (editor?: string) => void;
 }
