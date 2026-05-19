@@ -1,9 +1,7 @@
-import { Biome, Distribution } from "@biomejs/js-api";
-import type { Configuration } from "@biomejs/js-api";
-import initBiomeWasm from "@biomejs/wasm-web";
+import initBiomeWasm, { Workspace } from "@biomejs/wasm-web";
 
-let biomeWorkspace: Biome | null = null;
-let biomeProjectKey: number | null = null;
+let workspace: Workspace | null = null;
+let projectKey: number | null = null;
 let initialized = false;
 
 export type BiomeDiag = {
@@ -36,19 +34,23 @@ export async function initBiome(): Promise<void> {
 
   await initBiomeWasm();
 
-  biomeWorkspace = await Biome.create({ distribution: Distribution.WEB });
+  workspace = new Workspace();
 
-  const openRes = biomeWorkspace.openProject();
-  biomeProjectKey = openRes.projectKey;
+  const openRes = workspace.openProject({ path: "", openUninitialized: true });
+  projectKey = openRes.projectKey;
 
-  biomeWorkspace.applyConfiguration(biomeProjectKey, {
-    linter: {
-      enabled: true,
-      rules: {
-        recommended: true,
+  workspace.updateSettings({
+    projectKey,
+    configuration: {
+      linter: {
+        enabled: true,
+        rules: {
+          recommended: true,
+        },
       },
     },
-  } as unknown as Configuration);
+    workspaceDirectory: "./",
+  });
 
   initialized = true;
 }
@@ -58,48 +60,54 @@ export async function lintWithBiome(text: string, filepath = "file.ts"): Promise
     await initBiome();
   }
 
-  if (!biomeWorkspace) {
-    throw new Error("Biome workspace not active after runtime initialization");
+  if (!workspace || projectKey == null) {
+    throw new Error("Biome workspace not initialized");
   }
 
-  if (biomeProjectKey == null) {
-    throw new Error("Biome project key not initialized");
-  }
-
-  const result = biomeWorkspace.lintContent(biomeProjectKey, text, {
-    filePath: filepath,
+  workspace.openFile({
+    projectKey,
+    path: filepath,
+    content: { type: "fromClient", content: text, version: 0 },
   });
 
-  const diags = result?.diagnostics;
-  if (!Array.isArray(diags)) {
-    throw new Error("Unexpected Biome lint response shape: missing diagnostics block");
+  try {
+    const result = workspace.pullDiagnostics({
+      projectKey,
+      path: filepath,
+      categories: ["syntax", "lint", "action"],
+    });
+
+    const diags = result.diagnostics;
+    if (!Array.isArray(diags)) return [];
+
+    return diags.map((d) => {
+      const diag = d as unknown as {
+        location?: { span?: [number, number] } | null;
+        severity?: string | null;
+        description?: string | null;
+        category?: string | null;
+      };
+
+      const span = diag.location?.span;
+      const byteFrom = typeof span?.[0] === "number" ? span[0] : 0;
+      const byteTo = typeof span?.[1] === "number" ? span[1] : byteFrom;
+
+      const from = byteToCharOffset(text, byteFrom);
+      const to = byteToCharOffset(text, byteTo);
+
+      let severity: "error" | "warning" | "info" = "info";
+      if (diag.severity === "error" || diag.severity === "fatal") severity = "error";
+      if (diag.severity === "warning" || diag.severity === "warn") severity = "warning";
+
+      const rawMsg = diag.description ?? "";
+      const category = diag.category
+        ? diag.category.replace(/^lint\//, "")
+        : "";
+      const message = category ? `${rawMsg} [${category}]` : rawMsg;
+
+      return { from, to, severity, message };
+    });
+  } finally {
+    workspace.closeFile({ projectKey, path: filepath });
   }
-
-  return diags.map((d) => {
-    const diag = d as unknown as {
-      location?: { span?: [number, number] } | null;
-      severity?: string | null;
-      description?: string | null;
-      category?: string | null;
-    };
-
-    const span = diag.location?.span;
-    const byteFrom = typeof span?.[0] === "number" ? span[0] : 0;
-    const byteTo = typeof span?.[1] === "number" ? span[1] : byteFrom;
-
-    const from = byteToCharOffset(text, byteFrom);
-    const to = byteToCharOffset(text, byteTo);
-
-    let severity: "error" | "warning" | "info" = "info";
-    if (diag.severity === "error" || diag.severity === "fatal") severity = "error";
-    if (diag.severity === "warning" || diag.severity === "warn") severity = "warning";
-
-    const rawMsg = diag.description ?? "";
-    const category = diag.category
-      ? diag.category.replace(/^lint\//, "")
-      : "";
-    const message = category ? `${rawMsg} [${category}]` : rawMsg;
-
-    return { from, to, severity, message };
-  });
 }

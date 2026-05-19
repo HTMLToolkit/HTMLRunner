@@ -1,5 +1,5 @@
 import { ConsoleMessage, StackInfo, ConsoleData } from "./types";
-import { editors } from "./editor";
+import { editor } from "./editor";
 import { signal, effect, path } from "@nisoku/sairin";
 import { logFilters } from "./appState";
 
@@ -74,9 +74,8 @@ function renderConsoleEntries(entries: ConsoleMessage[]): void {
         if (lineNum) {
           lineEl.classList.add("clickable");
           lineEl.addEventListener("click", () => {
-            const ed = editors.js;
-            if (!ed) return;
-            const doc = ed.view.state.doc;
+            if (!editor.view) return;
+            const doc = editor.view.state.doc;
             const maxLine = doc.lines;
             const safeLine = Math.max(1, Math.min(lineNum as number, maxLine));
             const lineObj = doc.line(safeLine);
@@ -84,8 +83,8 @@ function renderConsoleEntries(entries: ConsoleMessage[]): void {
               lineObj.to,
               lineObj.from + Math.max(0, (colNum || 1) - 1),
             );
-            ed.view.dispatch({ selection: { anchor: offset } });
-            ed.view.focus();
+            editor.view.dispatch({ selection: { anchor: offset } });
+            editor.view.focus();
           });
         }
         stack.appendChild(lineEl);

@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HTMLRunner</title>
-    <!-- Main Styles-->
     <link rel="stylesheet" href="./styles/styles.css">
 </head>
 <body>
@@ -16,7 +15,6 @@
         <div class="header">
             <div class="logo">HTMLRunner</div>
             <div class="controls">
-                <button class="btn" id="install-button" hidden>Install App</button>
                 <button class="btn btn-run"><i class="fas fa-play"></i> Run</button>
                 <button class="btn btn-format"><i class="fas fa-code"></i> Format</button>
                 <button class="btn btn-reset"><i class="fas fa-undo"></i> Reset</button>
@@ -31,14 +29,26 @@
         </div>
         <div class="main">
             <div class="editor-panel" id="editor-panel">
-                <div class="editor-tabs">
-                    <div class="tab active" data-tab="html">HTML</div>
-                    <div class="tab" data-tab="css">CSS</div>
-                    <div class="tab" data-tab="js">JavaScript</div>
+                <div class="editor-header">
+                    <div class="file-tabs" id="file-tabs"></div>
                 </div>
-                <div class="editor-container" id="html-editor-container"></div>
-                <div class="editor-container" style="display: none;" id="css-editor-container"></div>
-                <div class="editor-container" style="display: none;" id="js-editor-container"></div>
+                <div class="editor-body">
+                    <div class="sidebar" id="sidebar">
+                        <div class="sidebar-header">
+                            <span>FILES</span>
+                            <button class="sidebar-new-btn" id="sidebar-new-btn" title="New File"><i class="fas fa-plus"></i></button>
+                        </div>
+                        <div class="file-tree" id="file-tree"></div>
+                        <div class="sidebar-section">
+                            <div class="sidebar-header">
+                                <span>GIT</span>
+                                <button class="sidebar-git-btn" id="sidebar-git-btn" title="Commit"><i class="fas fa-check"></i></button>
+                            </div>
+                            <div class="git-status" id="git-status"></div>
+                        </div>
+                    </div>
+                    <div class="editor-container" id="editor-container"></div>
+                </div>
             </div>
             <div class="output-panel" id="output-panel">
                 <div class="output-tabs">

@@ -1,7 +1,9 @@
-import { editors } from "./editor";
+import { editor } from "./editor";
 import { consoleInterceptor } from "./console";
 import { showError, showLoading, hideLoading, switchOutput } from "./ui";
 import { clearConsole, logConsoleError } from "./console";
+import { filesState } from "./appState";
+import type { FileTab } from "./types";
 
 type PrettierBundle = {
   prettier: typeof import("prettier/standalone");
@@ -38,7 +40,6 @@ async function loadPrettierBundle(): Promise<PrettierBundle> {
         }),
       )
       .catch((err) => {
-        // Reset cached promise so future attempts can retry
         prettierBundlePromise = undefined;
         throw err;
       });
@@ -47,15 +48,23 @@ async function loadPrettierBundle(): Promise<PrettierBundle> {
   return prettierBundlePromise;
 }
 
+function getFileByExt(files: FileTab[], ext: string): string {
+  const file = files.find((f) => {
+    const fext = f.name.split(".").pop()?.toLowerCase();
+    return fext === ext;
+  });
+  return file?.content ?? "";
+}
+
 export function runCode(): void {
   showLoading();
   clearConsole();
   try {
-    const html = editors.html.view.state.doc.toString();
-    const css = editors.css.view.state.doc.toString();
-    const js = editors.js.view.state.doc.toString();
+    const files = filesState.get();
+    const html = getFileByExt(files, "html") || getFileByExt(files, "htm");
+    const css = getFileByExt(files, "css");
+    const js = getFileByExt(files, "js") || getFileByExt(files, "mjs");
 
-    // Pre-parse JS
     try {
       if (js.trim()) new Function(js);
     } catch (syntaxError: unknown) {
@@ -68,47 +77,25 @@ export function runCode(): void {
       return;
     }
 
-    let docContent;
-    const isFullHtml = /<html[\s>/]|<!doctype html/i.test(html);
-    if (isFullHtml) {
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(html, "text/html");
-      if (!doc.head)
-        doc.documentElement.insertBefore(
-          document.createElement("head"),
-          doc.body,
-        );
-      const script = document.createElement("script");
-      script.textContent = consoleInterceptor;
-      doc.head.appendChild(script);
-      if (css.trim()) {
-        const style = document.createElement("style");
-        style.textContent = css;
-        doc.head.appendChild(style);
-      }
-      if (js.trim()) {
-        const script = document.createElement("script");
-        script.textContent = js;
-        doc.body.appendChild(script);
-      }
-      docContent = doc.documentElement.outerHTML;
-    } else {
-      docContent = [
-        '<!DOCTYPE html><html><head><meta charset="UTF-8">',
-        "<style>",
-        css,
-        "</style>",
-        "<script>",
-        consoleInterceptor,
-        "</script>",
-        "</head><body>",
-        html,
-        "</body>",
-        "<script>",
-        js,
-        "</script></html>",
-      ].join("");
-    }
+    const hasDocTag = /<html[\s>/]|<!doctype\s+html/i.test(html);
+
+    const docContent = hasDocTag
+      ? assembleFullHtml(html, css, js)
+      : [
+          '<!DOCTYPE html><html><head><meta charset="UTF-8">',
+          "<style>",
+          css,
+          "</style>",
+          "<script>",
+          consoleInterceptor,
+          "</script>",
+          "</head><body>",
+          html,
+          "</body>",
+          "<script>",
+          js,
+          "</script></html>",
+        ].join("");
 
     const blob = new Blob([docContent], { type: "text/html; charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -128,7 +115,43 @@ export function runCode(): void {
   }
 }
 
-// Lazy cached preview iframe lookup to avoid repeated document.* calls
+function assembleFullHtml(html: string, css: string, js: string): string {
+  const interceptorScript = `<script>${consoleInterceptor}<\/script>`;
+  const styleTag = css.trim() ? `<style>${css}<\/style>` : "";
+  const scriptTag = js.trim() ? `<script>${js}<\/script>` : "";
+  const headInjection = [interceptorScript, styleTag].filter(Boolean).join("\n");
+  const bodyInjection = scriptTag;
+
+  let result = html;
+
+  const headMatch = result.match(/(<\/head\s*>)/i);
+  if (headMatch && headInjection) {
+    result = result.slice(0, headMatch.index) +
+      headInjection + "\n" +
+      result.slice(headMatch.index);
+  }
+
+  const bodyMatch = result.match(/(<\/body\s*>)/i);
+  if (bodyMatch && bodyInjection) {
+    result = result.slice(0, bodyMatch.index) +
+      bodyInjection + "\n" +
+      result.slice(bodyMatch.index);
+  }
+
+  if (!headMatch && !bodyMatch) {
+    result = [
+      '<!DOCTYPE html><html><head><meta charset="UTF-8">',
+      headInjection,
+      "</head><body>",
+      result,
+      bodyInjection,
+      "</body></html>",
+    ].filter(Boolean).join("");
+  }
+
+  return result;
+}
+
 let _previewEl: HTMLIFrameElement | null | undefined;
 function getPreview(): HTMLIFrameElement | null {
   if (_previewEl === undefined) {
@@ -148,7 +171,6 @@ export async function formatCode(): Promise<void> {
       prettierPluginEstree,
     } = await loadPrettierBundle();
 
-    // Some dynamic imports expose the plugin as default export or as module namespace.
     const pHtml =
       (parserHtml as unknown as { default?: unknown }).default || parserHtml;
     const pCss =
@@ -159,105 +181,75 @@ export async function formatCode(): Promise<void> {
       (prettierPluginEstree as unknown as { default?: unknown }).default ||
       prettierPluginEstree;
 
-    // Format each editor separately with error handling
-    let formattedHtml = editors.html.view.state.doc.toString();
-    let formattedCss = editors.css.view.state.doc.toString();
-    let formattedJs = editors.js.view.state.doc.toString();
+    const files = filesState.get();
 
-    // Format HTML
-    try {
-      if (formattedHtml.trim()) {
-        // Trim surrounding whitespace
-        const normalizedHtml = formattedHtml.trim();
+    const formatFile = async (file: FileTab): Promise<string> => {
+      const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+      const content = file.content.trim();
+      if (!content) return file.content;
 
-        formattedHtml = await prettier.format(normalizedHtml, {
-          parser: "html",
-          plugins: [pHtml],
-          printWidth: 120,
-          tabWidth: 4,
-          htmlWhitespaceSensitivity: "ignore",
-          bracketSameLine: true,
-          singleAttributePerLine: false,
-        });
-
-        // Ensure the formatted HTML is well-formed
-        formattedHtml = formattedHtml.replace(/>\n\s*\n/g, ">\n");
-      }
-    } catch (error) {
-      console.warn("HTML formatting skipped:", error);
-      // Keep original HTML if formatting fails
-    }
-
-    // Format CSS
-    try {
-      if (formattedCss.trim()) {
-        formattedCss = await prettier.format(formattedCss, {
-          parser: "css",
-          plugins: [pCss],
-          printWidth: 100,
-          tabWidth: 2,
-        });
-      }
-    } catch (error) {
-      console.warn("CSS formatting failed:", error);
-    }
-
-    // Format JavaScript with better error handling
-    try {
-      if (formattedJs.trim()) {
-        formattedJs = await prettier.format(formattedJs, {
-          parser: "babel", // Use babel instead of flow
-          plugins: [pBabel, pEstree],
-          printWidth: 100,
-          tabWidth: 2,
-          semi: true,
-          singleQuote: true,
-          trailingComma: "es5",
-          bracketSpacing: true,
-        });
-      }
-    } catch (error) {
-      console.warn("JavaScript formatting failed:", error);
-      // Try with a simpler parser as fallback
       try {
-        formattedJs = await prettier.format(formattedJs, {
-          parser: "babel-ts", // Alternative parser
-          plugins: [pBabel, pEstree],
-          printWidth: 100,
-          tabWidth: 2,
-          semi: true,
-          singleQuote: true,
-        });
-      } catch (fallbackError) {
-        console.warn(
-          "Fallback JavaScript formatting also failed:",
-          fallbackError,
-        );
+        switch (ext) {
+          case "html":
+          case "htm":
+            return await prettier.format(content, {
+              parser: "html",
+              plugins: [pHtml],
+              printWidth: 120,
+              tabWidth: 4,
+              htmlWhitespaceSensitivity: "ignore",
+              bracketSameLine: true,
+              singleAttributePerLine: false,
+            });
+          case "css":
+            return await prettier.format(content, {
+              parser: "css",
+              plugins: [pCss],
+              printWidth: 100,
+              tabWidth: 2,
+            });
+          case "js":
+          case "mjs":
+          case "cjs":
+          case "jsx":
+            return await prettier.format(content, {
+              parser: "babel",
+              plugins: [pBabel, pEstree],
+              printWidth: 100,
+              tabWidth: 2,
+              semi: true,
+              singleQuote: true,
+              trailingComma: "es5",
+              bracketSpacing: true,
+            });
+          case "ts":
+          case "tsx":
+            try {
+              return await prettier.format(content, {
+                parser: "babel-ts",
+                plugins: [pBabel, pEstree],
+                printWidth: 100,
+                tabWidth: 2,
+                semi: true,
+                singleQuote: true,
+              });
+            } catch {
+              return file.content;
+            }
+          default:
+            return file.content;
+        }
+      } catch {
+        return file.content;
       }
-    }
+    };
 
-    // Update editors
-    editors.html.view.dispatch({
-      changes: {
-        from: 0,
-        to: editors.html.view.state.doc.length,
-        insert: formattedHtml,
-      },
-    });
-    editors.css.view.dispatch({
-      changes: {
-        from: 0,
-        to: editors.css.view.state.doc.length,
-        insert: formattedCss,
-      },
-    });
-    editors.js.view.dispatch({
-      changes: {
-        from: 0,
-        to: editors.js.view.state.doc.length,
-        insert: formattedJs,
-      },
-    });
+    const formatted = await Promise.all(files.map(formatFile));
+    const updated = files.map((f, i) => ({
+      ...f,
+      content: formatted[i],
+    }));
+    filesState.set(updated);
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);
     showError(`Error formatting code: ${msg}`);

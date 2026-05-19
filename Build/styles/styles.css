@@ -109,14 +109,307 @@ body {
     background: white;
     font-weight: 500;
 }
+.editor-header {
+    flex-shrink: 0;
+}
+.editor-body {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+    min-height: 0;
+}
 .editor-container {
     flex: 1;
     position: relative;
     overflow: hidden;
-    display: none;
 }
-.editor-container:not([style*="display: none"]) {
+
+/* VS Code-style Sidebar */
+.sidebar {
+    width: 220px;
+    min-width: 150px;
+    background: #f0f0f0;
+    border-right: 1px solid #e0e0e0;
+    display: flex;
+    flex-direction: column;
+    font-size: 13px;
+    user-select: none;
+    overflow-y: auto;
+    flex-shrink: 0;
+}
+.dark-mode .sidebar {
+    background: #252526;
+    border-right-color: #3c3c3c;
+}
+.sidebar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    color: #888;
+    text-transform: uppercase;
+    border-bottom: 1px solid #e0e0e0;
+}
+.dark-mode .sidebar-header {
+    color: #969696;
+    border-bottom-color: #3c3c3c;
+}
+.sidebar-new-btn,
+.sidebar-git-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #888;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 12px;
+    transition: all 0.15s;
+}
+.sidebar-new-btn:hover,
+.sidebar-git-btn:hover {
+    color: #2196F3;
+    background: rgba(33, 150, 243, 0.1);
+}
+.dark-mode .sidebar-new-btn,
+.dark-mode .sidebar-git-btn {
+    color: #969696;
+}
+.dark-mode .sidebar-new-btn:hover,
+.dark-mode .sidebar-git-btn:hover {
+    color: #64b5f6;
+    background: rgba(100, 181, 246, 0.1);
+}
+.sidebar-section {
+    border-bottom: 1px solid #e0e0e0;
+}
+.dark-mode .sidebar-section {
+    border-bottom-color: #3c3c3c;
+}
+
+/* File Tree */
+.file-tree {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 0;
+    min-height: 100px;
+}
+.file-tree-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    cursor: pointer;
+    color: #555;
+    transition: background 0.1s;
+    white-space: nowrap;
+}
+.file-tree-item:hover {
+    background: rgba(0, 0, 0, 0.04);
+}
+.file-tree-item.active {
+    background: rgba(33, 150, 243, 0.12);
+    color: #1a1a1a;
+}
+.dark-mode .file-tree-item {
+    color: #ccc;
+}
+.dark-mode .file-tree-item:hover {
+    background: rgba(255, 255, 255, 0.04);
+}
+.dark-mode .file-tree-item.active {
+    background: rgba(33, 150, 243, 0.18);
+    color: #fff;
+}
+.file-tree-icon {
+    width: 16px;
+    text-align: center;
+    font-size: 13px;
+    flex-shrink: 0;
+    color: #999;
+}
+.dark-mode .file-tree-icon {
+    color: #777;
+}
+.file-tree-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Git Status */
+.git-status {
+    padding: 4px 0;
+    min-height: 30px;
+    font-size: 12px;
+}
+.git-status-empty {
     display: block;
+    padding: 8px 12px;
+    color: #999;
+    font-style: italic;
+    font-size: 11px;
+}
+.dark-mode .git-status-empty {
+    color: #666;
+}
+.git-status-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 12px;
+    font-family: monospace;
+    font-size: 12px;
+}
+.git-badge {
+    font-weight: 700;
+    width: 18px;
+    text-align: center;
+    flex-shrink: 0;
+}
+.git-badge-modified, .git-badge-m {
+    color: #eab308;
+}
+.git-badge-added, .git-badge-a {
+    color: #22c55e;
+}
+.git-badge-deleted, .git-badge-d {
+    color: #ef4444;
+}
+.git-badge-renamed, .git-badge-r {
+    color: #a855f7;
+}
+.git-badge {
+    color: #888;
+}
+.git-status-filename {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #666;
+}
+.dark-mode .git-status-filename {
+    color: #999;
+}
+
+/* File tabs (VS Code style) */
+.file-tabs {
+    display: flex;
+    align-items: center;
+    background: #f5f5f5;
+    border-bottom: 1px solid #e0e0e0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    min-height: 36px;
+    scrollbar-width: thin;
+}
+.file-tabs::-webkit-scrollbar {
+    height: 3px;
+}
+.file-tabs::-webkit-scrollbar-thumb {
+    background: #ccc;
+    border-radius: 2px;
+}
+.file-tab {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    cursor: pointer;
+    color: #757575;
+    font-size: 13px;
+    white-space: nowrap;
+    border-right: 1px solid #e0e0e0;
+    position: relative;
+    transition: all 0.15s;
+    user-select: none;
+}
+.file-tab:hover {
+    color: #333;
+    background: rgba(0, 0, 0, 0.03);
+}
+.file-tab.active {
+    color: #333;
+    background: white;
+    border-bottom: 2px solid #2196F3;
+    margin-bottom: -1px;
+    font-weight: 500;
+}
+.file-tab-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: 14px;
+    color: #999;
+    border-radius: 3px;
+    padding: 0;
+    line-height: 1;
+    opacity: 0;
+    transition: all 0.15s;
+}
+.file-tab:hover .file-tab-close {
+    opacity: 1;
+}
+.file-tab-close:hover {
+    background: rgba(0, 0, 0, 0.1);
+    color: #333;
+}
+.file-tab-add {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: 18px;
+    color: #757575;
+    border-radius: 4px;
+    flex-shrink: 0;
+    margin-left: 4px;
+    transition: all 0.15s;
+}
+.file-tab-add:hover {
+    background: rgba(0, 0, 0, 0.05);
+    color: #333;
+}
+
+.dark-mode .file-tabs {
+    background: #252526;
+    border-bottom-color: #3c3c3c;
+}
+.dark-mode .file-tab {
+    color: #969696;
+    border-right-color: #3c3c3c;
+}
+.dark-mode .file-tab:hover {
+    color: #e0e0e0;
+    background: #2d2d2d;
+}
+.dark-mode .file-tab.active {
+    color: #e0e0e0;
+    background: #1e1e1e;
+    border-bottom-color: #2196F3;
+}
+.dark-mode .file-tab-close {
+    color: #666;
+}
+.dark-mode .file-tab-close:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #e0e0e0;
+}
+.dark-mode .file-tab-add {
+    color: #969696;
+}
+.dark-mode .file-tab-add:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: #e0e0e0;
 }
 .CodeMirror {
     position: absolute;
@@ -268,7 +561,7 @@ body.dark-mode { background-color: #1a1a1a; color: #e0e0e0; }
 .dark-mode .container { background: #1a1a1a; }
 .dark-mode .main, .dark-mode .editor-panel, .dark-mode .output-panel, .dark-mode .console { background-color: #2d2d2d; color: #e0e0e0; }
 .dark-mode .CodeMirror { background: #1e1e1e; color: #e0e0e0; }
-.dark-mode .editor-tabs, .dark-mode .output-tabs { background: #333; border-bottom-color: #444; }
+.dark-mode .file-tabs, .dark-mode .editor-tabs, .dark-mode .output-tabs { background: #333; border-bottom-color: #444; }
 .dark-mode .tab { color: #aaa; border-right-color: #444; }
 .dark-mode .tab.active { background: linear-gradient(135deg, #1e262c 0%, #23363e 100%); color: #fff; }
 .dark-mode .console-error { background: #3e2723; border-left-color: #d32f2f; }
@@ -557,8 +850,9 @@ body.dark-mode { background-color: #1a1a1a; color: #e0e0e0; }
 @media (max-width: 768px) {
     .main { flex-direction: column; }
     .editor-panel, .output-panel { height: 50%; }
-    .editor-tabs, .output-tabs { overflow-x: auto; white-space: nowrap; }
-    .tab { padding: 10px 15px; font-size: 0.9em; }
+    .file-tabs, .editor-tabs, .output-tabs { overflow-x: auto; white-space: nowrap; }
+    .file-tab, .tab { padding: 8px 12px; font-size: 0.85em; }
+    .file-tab-close { opacity: 1; }
 }
 @media (max-width: 480px) {
     .controls { flex-wrap: wrap; justify-content: flex-end; }

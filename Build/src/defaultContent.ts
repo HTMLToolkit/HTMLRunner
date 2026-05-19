@@ -1,3 +1,5 @@
+import type { FileTab } from "./types";
+
 export const defaultHtml = `<!DOCTYPE html>
 <html>
 <head>
@@ -37,3 +39,11 @@ console.error('This is an error');
 console.info('This is an info');
 console.log('Object:', { name: 'Alice', age: 25, hobbies: ['coding', 'reading'] });
 }`;
+
+export function getDefaultFiles(): FileTab[] {
+  return [
+    { id: "index.html", name: "index.html", content: defaultHtml, language: "html" },
+    { id: "styles.css", name: "styles.css", content: defaultCss, language: "css" },
+    { id: "script.js", name: "script.js", content: defaultJs, language: "javascript" },
+  ];
+}

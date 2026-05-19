@@ -84,6 +84,14 @@ export default defineConfig(({ mode }) => {
       isSingleFile && inlineSvgFaviconPlugin({ svg: "public/favicon.png" }),
     ].filter(Boolean),
 
+    define: {
+      global: "globalThis",
+    },
+
+    worker: {
+      format: "es",
+    },
+
     build: {
       sourcemap: !isSingleFile,
       outDir: "./dist",

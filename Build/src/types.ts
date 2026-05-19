@@ -7,7 +7,6 @@ declare global {
   }
 }
 
-// CodeMirror 6 editor instance type is EditorView
 export interface CodeMirrorEditor {
   view: EditorView;
   state: EditorState;
@@ -15,26 +14,26 @@ export interface CodeMirrorEditor {
   themeCompartment: Compartment;
 }
 
-// Configuration for CM6 is an array of Extensions
 export type CodeMirrorEditorConfig = Extension | Extension[];
 
-// Type for the function that creates the editor and attaches it to an element
 export interface CodeMirrorInstance {
   (element: HTMLElement, options?: CodeMirrorEditorConfig): CodeMirrorEditor;
 }
 
+export interface FileTab {
+  id: string;
+  name: string;
+  content: string;
+  language: string;
+}
+
 export interface Editors {
-  html: CodeMirrorEditor; // Added html
-  css: CodeMirrorEditor;
-  js: CodeMirrorEditor;
-  [key: string]: CodeMirrorEditor;
+  active: CodeMirrorEditor | null;
 }
 
 export interface State {
-  html: string;
-  css: string;
-  js: string;
-  activeTab: string;
+  files: FileTab[];
+  activeFile: string;
   activeOutput: string;
   splitSizes: number[];
   darkMode: boolean;
@@ -49,7 +48,6 @@ export interface ConsoleMessage {
   timestamp: string;
 }
 
-// Recursive console data types (use interfaces to avoid circular alias error)
 export type ConsolePrimitive = string | number | boolean | null;
 export interface ConsoleObject {
   [key: string]: ConsoleData;
@@ -77,12 +75,14 @@ export interface Actions {
   formatCode: () => Promise<void>;
   toggleAutoRun: () => void;
   toggleDarkMode: () => void;
-  switchTab: (tab: string) => void;
+  switchFile: (id: string) => void;
+  addFile: () => void;
+  closeFile: (id: string) => void;
   switchOutput: (output: string) => void;
   exportAsZip: () => Promise<void>;
   copyAllConsole: () => void;
-  copyEditorContent: (editor: string) => void;
+  copyEditorContent: () => void;
   toggleSearch: (mode?: "find" | "replace") => void;
-  undo?: (editor?: string) => void;
-  redo?: (editor?: string) => void;
+  undo?: () => void;
+  redo?: () => void;
 }
