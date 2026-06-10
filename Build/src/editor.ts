@@ -1,101 +1,130 @@
-import { Compartment, EditorState, Extension } from "@codemirror/state";
-import { EditorView, lineNumbers, keymap } from "@codemirror/view"; // Add standardKeymap, defaultKeymap
-import { defaultKeymap, standardKeymap } from "@codemirror/commands";
+import { markdown } from "@codemirror/lang-markdown";
+import { Compartment, EditorState } from "@codemirror/state";
+import { EditorView, keymap, lineNumbers } from "@codemirror/view";
+import { defaultKeymap, toggleComment, history, undo, redo } from "@codemirror/commands";
 import { html } from "@codemirror/lang-html";
 import { css } from "@codemirror/lang-css";
 import { javascript } from "@codemirror/lang-javascript";
+import { autocompletion } from "@codemirror/autocomplete";
+import { foldGutter, foldKeymap } from "@codemirror/language";
 import { linter, lintGutter } from "@codemirror/lint";
+import { lintWithBiome } from "./biome";
+import { search } from "@codemirror/search";
 import { monokai } from "@uiw/codemirror-theme-monokai";
 import { bbedit } from "@uiw/codemirror-theme-bbedit";
-import { CodeMirrorEditor, Editors } from "./types";
+import type { FileTab } from "./types";
 import { runCode } from "./runner";
-import { toggleSearch } from "./main";
 import { debounce } from "./utils";
-import { saveState } from "./state";
-import { search } from "@codemirror/search";
-import { toggleComment } from "@codemirror/commands"; // Ensure toggleComment is imported
+import {
+  autoRunState,
+  darkModeState,
+  filesState,
+  activeFileState,
+  cursorPos,
+} from "./appState";
+import { effect } from "@nisoku/sairin";
 
-export let isDarkMode: boolean = localStorage.getItem("darkMode") === "true";
-export let isAutoRun: boolean = localStorage.getItem("autoRun") === "true";
+export const editor: { view: EditorView | null } = { view: null };
 
-export const editors: Editors = {
-  html: null as unknown as CodeMirrorEditor,
-  css: null as unknown as CodeMirrorEditor,
-  js: null as unknown as CodeMirrorEditor,
-};
+let _languageCompartment: Compartment;
+let _themeCompartment: Compartment;
+let _autoRunCompartment: Compartment;
+let _suppressContentUpdate = false;
 
-export function setDarkMode(value: boolean): void {
-  isDarkMode = value;
-  Object.values(editors).forEach((editor) => {
-    editor.view.dispatch({
-      effects: editor.themeCompartment.reconfigure(
-        isDarkMode ? monokai : bbedit
-      ),
-    });
-  });
+function getLanguageExtension(fileName: string) {
+  const ext = fileName.split(".").pop()?.toLowerCase() || "";
+  switch (ext) {
+    case "html":
+    case "htm":
+      return html();
+    case "css":
+      return css();
+    case "js":
+    case "mjs":
+    case "cjs":
+    case "jsx":
+    case "ts":
+    case "tsx":
+      return javascript();
+    case "md":
+    case "markdown":
+      return markdown();
+    default:
+      return javascript();
+  }
 }
 
-export function setAutoRun(value: boolean): void {
-  isAutoRun = value;
+function getFileName(fileId: string, files: FileTab[]): string {
+  const f = files.find((f) => f.id === fileId);
+  return f?.name ?? "file.txt";
 }
 
-function createEditorConfig(
-  language: Extension,
-  container: HTMLElement,
-  content: string
-): CodeMirrorEditor {
-  const themeCompartment = new Compartment();
-  const autoRunCompartment = new Compartment();
+const debouncedRun = debounce(runCode, 250);
+const autoRunListener = EditorView.updateListener.of((update) => {
+  if (update.docChanged) debouncedRun();
+});
+
+export function createEditor(container: HTMLElement, initialFile: FileTab): void {
+  _languageCompartment = new Compartment();
+  _themeCompartment = new Compartment();
+  _autoRunCompartment = new Compartment();
 
   const view = new EditorView({
     state: EditorState.create({
-      doc: content,
+      doc: initialFile.content,
       extensions: [
         lineNumbers(),
-        language,
-        themeCompartment.of(isDarkMode ? monokai : bbedit),
+        history(),
+        foldGutter(),
+        linter(async (view) => {
+          const text = view.state.doc.toString();
+          const fileId = activeFileState.get();
+          const files = filesState.get();
+          const fileName = getFileName(fileId, files);
+          try {
+            const biomeDiags = await lintWithBiome(text, fileName);
+            return biomeDiags || [];
+          } catch {
+            return [];
+          }
+        }),
+        lintGutter(),
+        _languageCompartment.of(getLanguageExtension(initialFile.name)),
+        _themeCompartment.of(darkModeState.get() ? monokai : bbedit),
         EditorView.lineWrapping,
         EditorState.tabSize.of(2),
         EditorView.theme({
           "&": { height: "100%" },
           ".cm-scroller": { overflow: "auto" },
-          ".cm-content": { minHeight: "100%" }
+          ".cm-content": { minHeight: "100%" },
         }),
         search(),
-        linter(
-          (view) => {
-            return [];
-          },
-          { delay: 100 }
-        ),
-        lintGutter(),
+        autocompletion(),
         keymap.of([
-          ...standardKeymap, // Add standard keymap
-          ...defaultKeymap, // Add default keymap
-          {
-            key: "Ctrl-/",
-            run: (view: EditorView) => {
-              view.dispatch({
-                changes: { from: 0, to: view.state.doc.length, insert: "" },
-              });
-              return true;
-            },
-            preventDefault: true,
-          },
+          ...defaultKeymap,
+          ...foldKeymap,
+          { key: "Mod-/", run: toggleComment },
+          { key: "Mod-z", run: undo },
+          { key: "Mod-y", run: redo },
+          { key: "Mod-Shift-z", run: redo },
         ]),
-        autoRunCompartment.of(
-          isAutoRun
-            ? EditorView.updateListener.of((update) => {
-                if (update.docChanged) {
-                  debounce(runCode, 1000)();
-                }
-              })
-            : []
-        ),
-        // Autosave listener
+        _autoRunCompartment.of(autoRunState.get() ? autoRunListener : []),
         EditorView.updateListener.of((update) => {
-          if (update.docChanged) {
-            debounce(saveState, 1000)();
+          if (update.docChanged && !_suppressContentUpdate) {
+            const content = update.state.doc.toString();
+            const files = filesState.get();
+            const activeId = activeFileState.get();
+            const existing = files.find((f) => f.id === activeId);
+            if (existing && existing.content === content) return;
+            const updated = files.map((f) =>
+              f.id === activeId ? { ...f, content } : f,
+            );
+            filesState.set(updated);
+          }
+          if (update.selectionSet || update.docChanged) {
+            const pos = view.state.selection.main.head;
+            const line = view.state.doc.lineAt(pos);
+            cursorPos.set({ line: line.number, col: pos - line.from + 1 });
           }
         }),
       ],
@@ -103,37 +132,88 @@ function createEditorConfig(
     parent: container,
   });
 
-  // Prevent Enter from submitting a form
   view.dom.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
-      event.stopPropagation(); // Prevent form submission
+      event.stopPropagation();
     }
   });
 
-  return {
-    view,
-    state: view.state,
-    themeCompartment,
-    autoRunCompartment,
-  };
+  editor.view = view;
 }
 
-export function initializeEditors(): void {
-  const htmlContainer = document.getElementById(
-    "html-editor-container"
-  ) as HTMLElement;
-  const cssContainer = document.getElementById(
-    "css-editor-container"
-  ) as HTMLElement;
-  const jsContainer = document.getElementById(
-    "js-editor-container"
-  ) as HTMLElement;
+export function switchToFile(file: FileTab): void {
+  if (!editor.view) return;
 
-  if (!htmlContainer || !cssContainer || !jsContainer) {
-    throw new Error("Editor containers not found");
+  _suppressContentUpdate = true;
+
+  const currentContent = editor.view.state.doc.toString();
+  const currentId = activeFileState.get();
+  const files = filesState.get();
+  const updated = files.map((f) =>
+    f.id === currentId ? { ...f, content: currentContent } : f,
+  );
+  filesState.set(updated);
+
+  activeFileState.set(file.id);
+
+  editor.view.dispatch({
+    changes: {
+      from: 0,
+      to: editor.view.state.doc.length,
+      insert: file.content,
+    },
+  });
+
+  editor.view.dispatch({
+    effects: _languageCompartment.reconfigure(getLanguageExtension(file.name)),
+  });
+
+  editor.view.focus();
+
+  _suppressContentUpdate = false;
+}
+
+export function setDarkMode(value: boolean): void {
+  darkModeState.set(value);
+  if (editor.view) {
+    editor.view.dispatch({
+      effects: _themeCompartment.reconfigure(
+        darkModeState.get() ? monokai : bbedit,
+      ),
+    });
   }
-
-  editors.html = createEditorConfig(html(), htmlContainer, "");
-  editors.css = createEditorConfig(css(), cssContainer, "");
-  editors.js = createEditorConfig(javascript(), jsContainer, "");
 }
+
+export function setAutoRun(value: boolean): void {
+  autoRunState.set(value);
+  if (editor.view) {
+    editor.view.dispatch({
+      effects: _autoRunCompartment.reconfigure(
+        value ? autoRunListener : [],
+      ),
+    });
+  }
+}
+
+effect(() => {
+  const files = filesState.get();
+  const activeId = activeFileState.get();
+  const file = files.find((f) => f.id === activeId);
+  if (file && editor.view) {
+    const currentDoc = editor.view.state.doc.toString();
+    if (currentDoc !== file.content && !_suppressContentUpdate) {
+      _suppressContentUpdate = true;
+      editor.view.dispatch({
+        changes: {
+          from: 0,
+          to: editor.view.state.doc.length,
+          insert: file.content,
+        },
+      });
+      editor.view.dispatch({
+        effects: _languageCompartment.reconfigure(getLanguageExtension(file.name)),
+      });
+      _suppressContentUpdate = false;
+    }
+  }
+});

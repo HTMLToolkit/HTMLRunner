@@ -1,0 +1,46 @@
+name: Create single file build
+
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "single-file-build"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: "Build/package-lock.json"
+
+      - name: Install dependencies
+        working-directory: Build
+        run: npm ci
+
+      - name: Build
+        working-directory: Build
+        run: npm run build:single
+
+      - name: Rename for distribution
+        working-directory: Build/dist
+        run: mv index.html HTMLRunner.html
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HTMLRunner-Standalone
+          path: Build/dist/HTMLRunner.html
+          if-no-files-found: error
