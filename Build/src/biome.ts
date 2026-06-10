@@ -48,8 +48,14 @@ export async function initBiome(): Promise<void> {
           recommended: true,
         },
       },
+      files: {
+        ignoreUnknown: true,
+      },
+      vcs: {
+        enabled: false,
+      },
     },
-    workspaceDirectory: "./",
+    workspaceDirectory: "",
   });
 
   initialized = true;
@@ -64,7 +70,7 @@ export async function lintWithBiome(text: string, filepath = "file.ts"): Promise
     throw new Error("Biome workspace not initialized");
   }
 
-  workspace.openFile({
+  await workspace.openFile({
     projectKey,
     path: filepath,
     content: { type: "fromClient", content: text, version: 0 },

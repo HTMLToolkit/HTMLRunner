@@ -43,7 +43,7 @@ const logFiltersInitial = Array.isArray(persistedState?.logFilters)
   ? (persistedState!.logFilters as string[])
   : ["log", "error", "warn", "info"];
 
-const ALLOWED_OUTPUTS = ["preview", "console"] as const;
+const ALLOWED_OUTPUTS = ["preview", "console", "terminal"] as const;
 
 let _lastPersistedSnapshot = "";
 let _idleHandle: number | null = null;
@@ -73,19 +73,13 @@ effect(() => {
 export const autoRunText = signal(path("htmlrunner", "ui", "autoRunText"), autoRunState.get() ? "On" : "Off");
 effect(() => autoRunText.set(autoRunState.get() ? "On" : "Off"));
 
-export const activeFileContent = signal(path("htmlrunner", "editor", "activeFileContent"), "");
-effect(() => {
-  const files = filesState.get();
-  const activeId = activeFileState.get();
-  const file = files.find((f) => f.id === activeId);
-  activeFileContent.set(file?.content ?? "");
-});
-
 export const previewClass = signal(path("htmlrunner", "ui", "previewClass"), activeOutputState.get() === "preview" ? "tab active" : "tab");
 export const consoleClass = signal(path("htmlrunner", "ui", "consoleClass"), activeOutputState.get() === "console" ? "tab active" : "tab");
+export const terminalClass = signal(path("htmlrunner", "ui", "terminalClass"), activeOutputState.get() === "terminal" ? "tab active" : "tab");
 effect(() => {
   previewClass.set(activeOutputState.get() === "preview" ? "tab active" : "tab");
   consoleClass.set(activeOutputState.get() === "console" ? "tab active" : "tab");
+  terminalClass.set(activeOutputState.get() === "terminal" ? "tab active" : "tab");
 });
 
 export const bodyClass = signal(path("htmlrunner", "ui", "bodyClass"), darkModeState.get() ? "dark-mode" : "");
@@ -100,6 +94,8 @@ effect(() => {
 });
 
 export const globalActions = signal(path("htmlrunner", "global", "actions"), {} as Actions);
+
+export const cursorPos = signal(path("htmlrunner", "ui", "cursorPos"), { line: 1, col: 1 });
 
 effect(() => {
   if (!stateHydrated.get()) return;

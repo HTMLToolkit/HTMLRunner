@@ -1,34 +1,8 @@
-import { Compartment, EditorState, Extension } from "@codemirror/state";
-import { EditorView } from "@codemirror/view";
-
-declare global {
-  interface Window {
-    prettierPlugins: unknown[];
-  }
-}
-
-export interface CodeMirrorEditor {
-  view: EditorView;
-  state: EditorState;
-  autoRunCompartment: Compartment;
-  themeCompartment: Compartment;
-}
-
-export type CodeMirrorEditorConfig = Extension | Extension[];
-
-export interface CodeMirrorInstance {
-  (element: HTMLElement, options?: CodeMirrorEditorConfig): CodeMirrorEditor;
-}
-
 export interface FileTab {
   id: string;
   name: string;
   content: string;
   language: string;
-}
-
-export interface Editors {
-  active: CodeMirrorEditor | null;
 }
 
 export interface State {
@@ -69,7 +43,7 @@ export interface StackInfo {
 }
 
 export interface Actions {
-  runCode: () => void;
+  runCode: () => Promise<void>;
   clearConsole: () => void;
   resetCode: (skipConfirmation?: boolean) => void;
   formatCode: () => Promise<void>;

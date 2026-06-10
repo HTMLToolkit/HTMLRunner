@@ -47,3 +47,48 @@ export function getDefaultFiles(): FileTab[] {
     { id: "script.js", name: "script.js", content: defaultJs, language: "javascript" },
   ];
 }
+
+const TEMPLATES: Record<string, string> = {
+  html: `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Document</title>
+</head>
+<body>
+
+</body>
+</html>`,
+  css: `* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: system-ui, sans-serif;
+  line-height: 1.6;
+  color: #333;
+  padding: 20px;
+}`,
+  js: `'use strict';
+
+`,
+  ts: `export {};\n`,
+  json: `{\n  \n}\n`,
+};
+
+export function getTemplateForExt(ext: string): string {
+  return TEMPLATES[ext] ?? "";
+}
+
+export function getLanguageForExt(ext: string): string {
+  switch (ext) {
+    case "html": case "htm": return "html";
+    case "css": return "css";
+    case "js": case "mjs": case "cjs": case "jsx": case "ts": case "tsx": return "javascript";
+    case "json": return "javascript";
+    default: return "javascript";
+  }
+}

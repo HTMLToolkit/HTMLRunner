@@ -12,6 +12,7 @@ import Split from "split.js";
 import { copyToClipboard } from "./utils";
 import { clearConsole, initializeConsole, consoleEntries } from "./console";
 import { runCode, formatCode } from "./runner";
+import { createTerminal, fitTerminal } from "./terminal";
 import { undo as cmUndo, redo as cmRedo } from "@codemirror/commands";
 import {
   resetCode,
@@ -28,13 +29,15 @@ import {
   autoRunText,
   previewClass,
   consoleClass,
+  terminalClass,
   loadingVisible,
   errorMessage,
   errorVisible,
   themeLabel,
   themeIconClass,
+  cursorPos,
 } from "./appState";
-import { switchOutput, showError, toggleAutoRun, toggleDarkMode } from "./ui";
+import { switchOutput, showError, toggleAutoRun, toggleDarkMode, showLoading, hideLoading } from "./ui";
 import JSZip from "jszip";
 import { saveAs } from "file-saver";
 import {
@@ -45,14 +48,25 @@ import {
   effect,
 } from "@nisoku/sairin";
 import type { FileTab } from "./types";
+import { getTemplateForExt, getLanguageForExt } from "./defaultContent";
 import {
   initializeVFS,
   isReady,
   syncFilesDebounced,
+  syncFilesToVFS,
   createFileInVFS,
   deleteFileInVFS,
+  renameFileInVFS,
   gitCommit,
   gitStatus,
+  gitDiff,
+  gitLog,
+  gitPush,
+  gitPull,
+  gitClone,
+  gitGetRemotes,
+  gitAddRemote,
+  gitRemoveRemote,
 } from "./vfs";
 import type { GitFileStatus } from "./vfs";
 import GitWorker from "./git.worker?worker&inline";
@@ -137,6 +151,8 @@ window.addEventListener("beforeunload", () => {
   if (splitInstance) {
     splitInstance.destroy();
   }
+  const files = filesState.get();
+  syncFilesToVFS(files).catch(() => {});
 });
 
 function addGlobalSearchShortcuts() {
@@ -148,6 +164,227 @@ function addGlobalSearchShortcuts() {
     }
   };
   window.addEventListener("keydown", preventDefault, true);
+}
+
+// Menu bar
+let activeMenu: string | null = null;
+
+function initializeMenuBar(): void {
+  const menuItems = document.querySelectorAll(".menu-item");
+  const dropdowns = document.querySelectorAll(".menu-dropdown");
+
+  function closeAllMenus() {
+    activeMenu = null;
+    dropdowns.forEach((d) => d.classList.remove("open"));
+  }
+
+  menuItems.forEach((item) => {
+    const menuId = (item as HTMLElement).dataset.menu;
+    if (!menuId) return;
+
+    item.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const dropdown = document.getElementById(`menu-${menuId}`);
+      if (!dropdown) return;
+
+      if (activeMenu === menuId) {
+        closeAllMenus();
+        return;
+      }
+
+      closeAllMenus();
+      const rect = item.getBoundingClientRect();
+      dropdown.style.left = `${rect.left}px`;
+      dropdown.style.top = `${rect.bottom}px`;
+      dropdown.classList.add("open");
+      activeMenu = menuId;
+    });
+
+    item.addEventListener("mouseenter", () => {
+      if (activeMenu && activeMenu !== menuId) {
+        const dropdown = document.getElementById(`menu-${menuId}`);
+        if (!dropdown) return;
+        const prev = document.getElementById(`menu-${activeMenu}`);
+        if (prev) prev.classList.remove("open");
+        const rect = item.getBoundingClientRect();
+        dropdown.style.left = `${rect.left}px`;
+        dropdown.style.top = `${rect.bottom}px`;
+        dropdown.classList.add("open");
+        activeMenu = menuId;
+      }
+    });
+  });
+
+  // Handle menu dropdown item clicks
+  document.addEventListener("click", (e) => {
+    const target = e.target as HTMLElement;
+    const item = target.closest(".menu-dropdown-item") as HTMLElement | null;
+    if (!item) return;
+
+    const action = item.dataset.action;
+    if (!action) return;
+
+    closeAllMenus();
+
+    // Parse compound actions
+    if (action.startsWith("switchOutput-")) {
+      switchOutput(action.slice("switchOutput-".length));
+      return;
+    }
+    if (action === "toggleSearch") {
+      toggleSearch("find");
+      return;
+    }
+    if (action === "toggleReplace") {
+      toggleSearch("replace");
+      return;
+    }
+
+    // Direct actions
+    const actionMap: Record<string, () => void> = {
+      addFile: () => addFileAction(),
+      addFolder: () => addFolderAction(),
+      importFiles: () => importFilesAction(),
+      exportAsZip: () => { exportAsZip().catch(console.error); },
+
+      resetCode: () => resetCode(),
+      undo: () => undoAction(),
+      redo: () => redoAction(),
+      formatCode: () => { formatCode().catch(console.error); },
+      toggleSidebar: () => toggleSidebar(),
+      toggleDarkMode: () => toggleDarkMode(),
+      toggleAutoRun: () => toggleAutoRun(),
+      runCode: () => { runCode().catch(console.error); },
+      clearConsole: () => clearConsole(),
+      gitStatus: () => showGitStatus(),
+      gitCommit: () => { commitAction().catch(console.error); },
+      gitDiff: () => showGitDiff().catch(console.error),
+      gitLog: () => showGitLog().catch(console.error),
+      gitPush: () => { pushAction().catch(console.error); },
+      gitPull: () => { pullAction().catch(console.error); },
+      gitClone: () => { cloneAction().catch(console.error); },
+      about: () => showAbout(),
+      openShortcuts: () => showShortcuts(),
+    };
+
+    const fn = actionMap[action];
+    if (fn) fn();
+  });
+
+  // Close menus on outside click
+  document.addEventListener("click", (e) => {
+    const target = e.target as HTMLElement;
+    if (!target.closest(".menu-item") && !target.closest(".menu-dropdown")) {
+      closeAllMenus();
+    }
+  });
+
+  // Close menus on Escape
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeAllMenus();
+  });
+}
+
+// Toggle sidebar visibility
+let sidebarVisible = true;
+function toggleSidebar(): void {
+  const sidebar = document.getElementById("sidebar");
+  if (!sidebar) return;
+  sidebarVisible = !sidebarVisible;
+  sidebar.style.display = sidebarVisible ? "" : "none";
+}
+
+// Markdown preview renderer
+// Git UI dialogs
+
+async function showGitStatus(): Promise<void> {
+  try {
+    const statuses = await gitStatus();
+    const msg = statuses.length === 0
+      ? "No changes (clean working tree)"
+      : statuses.map((s) => `  ${s.short}  ${s.filepath}`).join("\n");
+    showInfoDialog("Git Status", msg);
+  } catch {
+    showError("Failed to get git status");
+  }
+}
+
+async function showGitDiff(): Promise<void> {
+  try {
+    const diff = await gitDiff();
+    if (!diff) {
+      showInfoDialog("Git Diff", "No differences found.");
+      return;
+    }
+    showInfoDialog("Git Diff", diff);
+  } catch {
+    showError("Failed to get git diff");
+  }
+}
+
+async function showGitLog(): Promise<void> {
+  try {
+    const log = await gitLog();
+    if (log.length === 0) {
+      showInfoDialog("Git Log", "No commits yet.");
+      return;
+    }
+    const msg = log.map((c) =>
+      `${c.oid.slice(0, 7)}  ${new Date(c.date).toLocaleDateString()}  ${c.author}\n      ${c.message}`
+    ).join("\n");
+    showInfoDialog("Git Log", msg);
+  } catch {
+    showError("Failed to get git log");
+  }
+}
+
+// Simple modal dialog
+
+function showInfoDialog(title: string, body: string): void {
+  // Remove existing dialog
+  document.querySelector(".info-dialog-overlay")?.remove();
+
+  const overlay = document.createElement("div");
+  overlay.className = "info-dialog-overlay";
+  overlay.addEventListener("click", () => overlay.remove());
+
+  const dialog = document.createElement("div");
+  dialog.className = "info-dialog";
+  dialog.addEventListener("click", (e) => e.stopPropagation());
+
+  const header = document.createElement("div");
+  header.className = "info-dialog-header";
+  header.textContent = title;
+
+  const closeBtn = document.createElement("button");
+  closeBtn.className = "info-dialog-close";
+  closeBtn.innerHTML = "&times;";
+  closeBtn.addEventListener("click", () => overlay.remove());
+  header.appendChild(closeBtn);
+
+  const bodyEl = document.createElement("pre");
+  bodyEl.className = "info-dialog-body";
+  bodyEl.textContent = body;
+
+  dialog.appendChild(header);
+  dialog.appendChild(bodyEl);
+  overlay.appendChild(dialog);
+  document.body.appendChild(overlay);
+}
+
+// About dialog
+function showAbout(): void {
+  showInfoDialog(
+    "About HTMLRunner",
+    `HTMLRunner v1.2.0\n\nA browser-based HTML/CSS/JavaScript code editor\nwith live preview, console, and git integration.\n\nBuilt with:\n  - CodeMirror 6\n  - Vite\n  - isomorphic-git\n  - ZenFS\n  - Biome\n  - Prettier\n\nhttps://htmltoolkit.github.io/HTMLRunner/`
+  );
+}
+
+function showShortcuts(): void {
+  showInfoDialog(
+    "Keyboard Shortcuts",
+    `Ctrl/Cmd + Enter    Run code\nCtrl/Cmd + F        Find\nCtrl/Cmd + H        Find & Replace\nCtrl/Cmd + /        Toggle comment\nCtrl/Cmd + Z        Undo\nCtrl/Cmd + Y        Redo\nTab / Shift+Tab     Indent / Unindent\nEsc                 Close menus`
+  );
 }
 
 async function exportAsZip() {
@@ -365,27 +602,147 @@ function getFileIcon(name: string): string {
   return FILE_ICONS[ext] || "far fa-file-code";
 }
 
+const expandedFolders = new Set<string>();
+
+function getDirPath(name: string): string {
+  const idx = name.lastIndexOf("/");
+  return idx >= 0 ? name.slice(0, idx) : "";
+}
+
+function getBaseName(name: string): string {
+  const idx = name.lastIndexOf("/");
+  return idx >= 0 ? name.slice(idx + 1) : name;
+}
+
+interface TreeNode {
+  name: string;
+  path: string;
+  isFile: boolean;
+  file?: FileTab;
+  children: TreeNode[];
+}
+
+function buildFileTree(files: FileTab[]): TreeNode[] {
+  const root: TreeNode[] = [];
+
+  for (const file of files) {
+    const parts = file.name.split("/");
+    let current = root;
+
+    for (let i = 0; i < parts.length; i++) {
+      const isFile = i === parts.length - 1;
+      const part = parts[i];
+      const fullPath = parts.slice(0, i + 1).join("/");
+
+      let existing = current.find((n) => n.name === part);
+      if (!existing) {
+        existing = {
+          name: part,
+          path: fullPath,
+          isFile,
+          children: [],
+        };
+        if (isFile) existing.file = file;
+        current.push(existing);
+      }
+      if (!isFile) {
+        current = existing.children;
+      }
+    }
+  }
+
+  function sortNodes(nodes: TreeNode[]): void {
+    nodes.sort((a, b) => {
+      if (a.isFile !== b.isFile) return a.isFile ? 1 : -1;
+      return a.name.localeCompare(b.name);
+    });
+    for (const n of nodes) {
+      if (!n.isFile) sortNodes(n.children);
+    }
+  }
+  sortNodes(root);
+  return root;
+}
+
+function renderTreeNode(
+  node: TreeNode,
+  activeId: string,
+  depth: number,
+): HTMLElement | null {
+  if (node.isFile && node.name === ".gitkeep") return null;
+
+  const item = document.createElement("div");
+
+  if (node.isFile) {
+    item.className = `file-tree-item${node.file && node.file.id === activeId ? " active" : ""}`;
+    item.dataset.file = node.file?.id;
+
+    const icon = document.createElement("i");
+    const fileName = node.file?.name ?? node.name;
+    icon.className = getFileIcon(fileName) + " file-tree-icon";
+    item.appendChild(icon);
+
+    const name = document.createElement("span");
+    name.className = "file-tree-name";
+    name.textContent = node.name;
+    item.appendChild(name);
+  } else {
+    const isOpen = expandedFolders.has(node.path);
+    item.className = "file-tree-folder";
+    item.dataset.folder = node.path;
+
+    const toggle = document.createElement("span");
+    toggle.className = "file-tree-toggle";
+    toggle.textContent = isOpen ? "▾" : "▸";
+    item.appendChild(toggle);
+
+    const icon = document.createElement("i");
+    icon.className = "fas fa-folder" + (isOpen ? "-open" : "") + " file-tree-icon";
+    item.appendChild(icon);
+
+    const name = document.createElement("span");
+    name.className = "file-tree-name";
+    name.textContent = node.name;
+    item.appendChild(name);
+
+    if (isOpen) {
+      const visible = node.children.filter(
+        (c) => !(c.isFile && c.name === ".gitkeep"),
+      );
+      if (visible.length > 0) {
+        const children = document.createElement("div");
+        children.className = "file-tree-children";
+        const sorted = [...visible].sort((a, b) => {
+          if (a.isFile !== b.isFile) return a.isFile ? 1 : -1;
+          return a.name.localeCompare(b.name);
+        });
+        let hasChild = false;
+        for (const child of sorted) {
+          const el = renderTreeNode(child, activeId, depth + 1);
+          if (el) {
+            children.appendChild(el);
+            hasChild = true;
+          }
+        }
+        if (hasChild) item.appendChild(children);
+      }
+    }
+  }
+
+  item.style.paddingLeft = `${depth * 16 + 4}px`;
+  return item;
+}
+
 function renderFileTree(container: HTMLElement): void {
   const files = filesState.get();
   const activeId = activeFileState.get();
 
   container.innerHTML = "";
 
-  for (const file of files) {
-    const item = document.createElement("div");
-    item.className = `file-tree-item${file.id === activeId ? " active" : ""}`;
-    item.dataset.file = file.id;
-
-    const icon = document.createElement("i");
-    icon.className = getFileIcon(file.name) + " file-tree-icon";
-    item.appendChild(icon);
-
-    const name = document.createElement("span");
-    name.className = "file-tree-name";
-    name.textContent = file.name;
-    item.appendChild(name);
-
-    container.appendChild(item);
+  const root = buildFileTree(files);
+  for (const node of root) {
+    const el = renderTreeNode(node, activeId, 0);
+    if (el) container.appendChild(el);
   }
 }
 
@@ -425,20 +782,18 @@ function switchFileAction(id: string): void {
 }
 
 function addFileAction(): void {
-  const name = prompt("Enter filename:", "untitled.html");
+  const name = prompt("Enter filename (use / for folders):", "untitled.html");
   if (!name || !name.trim()) return;
 
   const fileName = name.trim();
   const ext = fileName.split(".").pop()?.toLowerCase() || "";
-  let language = "javascript";
-  if (ext === "html" || ext === "htm") language = "html";
-  else if (ext === "css") language = "css";
-  else if (["js", "mjs", "cjs", "jsx", "ts", "tsx"].includes(ext)) language = "javascript";
+  const language = getLanguageForExt(ext);
+  const template = getTemplateForExt(ext);
 
   const newFile: FileTab = {
     id: fileName,
     name: fileName,
-    content: "",
+    content: template,
     language,
   };
 
@@ -450,7 +805,7 @@ function addFileAction(): void {
   if (file) switchToFile(file);
 
   if (isReady()) {
-    createFileInVFS(fileName, "").catch((err) =>
+    createFileInVFS(fileName, template).catch((err) =>
       console.warn("VFS create failed:", err),
     );
   }
@@ -501,18 +856,413 @@ async function refreshGitStatus(): Promise<void> {
     const statuses = await gitStatus();
     renderGitStatus(statusEl, statuses);
   } catch {
-    // not ready yet
+    // VFS not ready yet
   }
 }
 
+async function pushAction(): Promise<void> {
+  const remotes = await gitGetRemotes();
+  let remote = "origin";
+  if (remotes.length === 0) {
+    const url = prompt("No remotes configured. Enter remote URL:");
+    if (!url) return;
+    await gitAddRemote("origin", url);
+  } else if (remotes.length > 1) {
+    const msg = remotes.map((r, i) => `${i + 1}. ${r.remote} → ${r.url}`).join("\n");
+    const choice = prompt(`Select remote (1-${remotes.length}):\n${msg}`);
+    if (!choice) return;
+    const idx = parseInt(choice, 10) - 1;
+    if (idx >= 0 && idx < remotes.length) remote = remotes[idx].remote;
+  } else {
+    remote = remotes[0].remote;
+  }
+
+  const ref = prompt("Branch to push:", "main") || "main";
+  try {
+    showLoading();
+    await gitPush(remote, ref);
+    showError(`Pushed to ${remote}/${ref}`);
+  } catch (err) {
+    console.error("Push failed:", err);
+    showError(`Push failed: ${err instanceof Error ? err.message : String(err)}`);
+  } finally {
+    hideLoading();
+  }
+}
+
+async function pullAction(): Promise<void> {
+  const remotes = await gitGetRemotes();
+  if (remotes.length === 0) {
+    showError("No remotes configured");
+    return;
+  }
+  const ref = prompt("Branch to pull:", "main") || "main";
+  try {
+    showLoading();
+    await gitPull(remotes[0].remote, ref);
+    showError(`Pulled from ${remotes[0].remote}/${ref}`);
+    await refreshGitStatus();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("MissingNameError") || msg.includes("author")) {
+      showError("Git author not configured. Make a commit first to set author info.");
+    } else {
+      showError(`Pull failed: ${msg}`);
+    }
+  } finally {
+    hideLoading();
+  }
+}
+
+async function cloneAction(): Promise<void> {
+  const url = prompt("Clone repository URL:");
+  if (!url) return;
+  try {
+    showLoading();
+    await gitClone(url);
+    showError("Repository cloned");
+    await refreshGitStatus();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("AlreadyExistsError") || msg.includes("already exists")) {
+      showError("Clone failed: repository already exists. Reset or use a different directory.");
+    } else {
+      showError(`Clone failed: ${msg}`);
+    }
+  } finally {
+    hideLoading();
+  }
+}
+
+// Import files from disk
+
+function importFilesAction(): void {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.multiple = true;
+  input.accept = ".html,.htm,.css,.js,.mjs,.cjs,.ts,.tsx,.jsx,.json,.svg,.xml,.txt,.md";
+  input.addEventListener("change", async () => {
+    const fileList = input.files;
+    if (!fileList || fileList.length === 0) return;
+    const newTabs: FileTab[] = [];
+    for (let i = 0; i < fileList.length; i++) {
+      const f = fileList[i];
+      const content = await f.text();
+      const ext = f.name.split(".").pop()?.toLowerCase() || "";
+      const language = getLanguageForExt(ext);
+      newTabs.push({ id: f.name, name: f.name, content, language });
+    }
+    if (newTabs.length > 0) {
+      const currentFiles = filesState.get();
+      filesState.set([...currentFiles, ...newTabs]);
+      activeFileState.set(newTabs[0].id);
+      const file = filesState.get().find((f) => f.id === newTabs[0].id);
+      if (file) switchToFile(file);
+    }
+  });
+  input.click();
+}
+
+// Tab management
+
+function renameFileAction(id: string): void {
+  const files = filesState.get();
+  const file = files.find((f) => f.id === id);
+  if (!file) return;
+  const newName = prompt("Rename file:", file.name);
+  if (!newName || !newName.trim() || newName.trim() === file.name) return;
+  const trimmed = newName.trim();
+  const ext = trimmed.split(".").pop()?.toLowerCase() || "";
+  const language = getLanguageForExt(ext);
+  const updated = files.map((f) =>
+    f.id === id ? { ...f, id: trimmed, name: trimmed, language } : f,
+  );
+  filesState.set(updated);
+  if (activeFileState.get() === id) {
+    activeFileState.set(trimmed);
+  }
+  if (isReady()) {
+    renameFileInVFS(file.name, trimmed).catch((err) =>
+      console.warn("VFS rename failed:", err),
+    );
+  }
+}
+
+function duplicateFileAction(id: string): void {
+  const files = filesState.get();
+  const file = files.find((f) => f.id === id);
+  if (!file) return;
+  const dotIdx = file.name.lastIndexOf(".");
+  let newName: string;
+  if (dotIdx > 0) {
+    newName = file.name.slice(0, dotIdx) + "-copy" + file.name.slice(dotIdx);
+  } else {
+    newName = file.name + "-copy";
+  }
+  let counter = 1;
+  while (files.some((f) => f.name === newName)) {
+    counter++;
+    if (dotIdx > 0) {
+      newName = file.name.slice(0, dotIdx) + `-copy${counter}` + file.name.slice(dotIdx);
+    } else {
+      newName = file.name + `-copy${counter}`;
+    }
+  }
+  const newFile: FileTab = {
+    id: newName,
+    name: newName,
+    content: file.content,
+    language: file.language,
+  };
+  filesState.set([...files, newFile]);
+  activeFileState.set(newName);
+  const tab = filesState.get().find((f) => f.id === newName);
+  if (tab) switchToFile(tab);
+  if (isReady()) {
+    createFileInVFS(newName, file.content).catch((err) =>
+      console.warn("VFS create failed:", err),
+    );
+  }
+}
+
+function closeOthersAction(id: string): void {
+  const files = filesState.get();
+  const kept = files.filter((f) => f.id === id);
+  if (kept.length === 0) return;
+  const removed = files.filter((f) => f.id !== id);
+  filesState.set(kept);
+  activeFileState.set(id);
+  switchToFile(kept[0]);
+  if (isReady()) {
+    for (const f of removed) {
+      deleteFileInVFS(f.name).catch(() => {});
+    }
+  }
+}
+
+function closeAllAction(): void {
+  const files = filesState.get();
+  if (files.length === 0) return;
+  const removed = files.slice(1);
+  const kept = files[0];
+  filesState.set([kept]);
+  activeFileState.set(kept.id);
+  switchToFile(kept);
+  if (isReady()) {
+    for (const f of removed) {
+      deleteFileInVFS(f.name).catch(() => {});
+    }
+  }
+}
+
+function addFileInFolder(folderPath: string): void {
+  const name = prompt(`Enter filename in "${folderPath}/":`, "untitled.html");
+  if (!name || !name.trim()) return;
+
+  const fileName = folderPath ? folderPath + "/" + name.trim() : name.trim();
+  const ext = fileName.split(".").pop()?.toLowerCase() || "";
+  const language = getLanguageForExt(ext);
+  const template = getTemplateForExt(ext);
+
+  const newFile: FileTab = {
+    id: fileName,
+    name: fileName,
+    content: template,
+    language,
+  };
+
+  const files = filesState.get();
+  filesState.set([...files, newFile]);
+  activeFileState.set(newFile.id);
+
+  const file = filesState.get().find((f) => f.id === newFile.id);
+  if (file) switchToFile(file);
+
+  if (isReady()) {
+    createFileInVFS(fileName, template).catch((err) =>
+      console.warn("VFS create failed:", err),
+    );
+  }
+}
+
+function addFolderAction(): void {
+  const name = prompt("Enter folder name:", "new-folder");
+  if (!name || !name.trim()) return;
+
+  const folderName = name.trim().replace(/\s+/g, "-").toLowerCase();
+  const keepFile = ".gitkeep";
+  const fileName = folderName + "/" + keepFile;
+
+  const newFile: FileTab = {
+    id: fileName,
+    name: fileName,
+    content: "",
+    language: "text",
+  };
+
+  const files = filesState.get();
+  filesState.set([...files, newFile]);
+
+  expandedFolders.add(folderName);
+
+  if (isReady()) {
+    createFileInVFS(fileName, "").catch((err) =>
+      console.warn("VFS create failed:", err),
+    );
+  }
+}
+
+function deleteFolderAction(folderPath: string): void {
+  if (!confirm(`Delete folder "${folderPath}" and all files inside?`)) return;
+  const files = filesState.get();
+  const updated = files.filter((f) => {
+    const dir = getDirPath(f.name);
+    return dir !== folderPath && !dir.startsWith(folderPath + "/");
+  });
+  if (updated.length === files.length) return;
+  filesState.set(updated);
+  const activeId = activeFileState.get();
+  if (!updated.find((f) => f.id === activeId) && updated.length > 0) {
+    activeFileState.set(updated[0].id);
+    switchToFile(updated[0]);
+  }
+}
+
+function showFolderContextMenu(e: MouseEvent, folderPath: string): void {
+  e.preventDefault();
+  document.querySelector(".tab-context-menu")?.remove();
+
+  const menu = document.createElement("div");
+  menu.className = "tab-context-menu";
+  menu.style.left = e.clientX + "px";
+  menu.style.top = e.clientY + "px";
+
+  const items = [
+    {
+      label: "New File",
+      icon: "fa-file",
+      action: () => addFileInFolder(folderPath),
+    },
+    {
+      label: "New Folder",
+      icon: "fa-folder",
+      action: () => addSubfolderAction(folderPath),
+    },
+    {
+      label: "Delete Folder",
+      icon: "fa-trash",
+      action: () => deleteFolderAction(folderPath),
+    },
+  ];
+
+  for (const item of items) {
+    const el = document.createElement("div");
+    el.className = "context-menu-item";
+    el.innerHTML = `<i class="fas ${item.icon}"></i> ${item.label}`;
+    el.addEventListener("click", () => {
+      menu.remove();
+      item.action();
+    });
+    menu.appendChild(el);
+  }
+
+  const closeMenu = (ev: MouseEvent) => {
+    if (!menu.contains(ev.target as Node)) {
+      menu.remove();
+      document.removeEventListener("click", closeMenu);
+    }
+  };
+  setTimeout(() => document.addEventListener("click", closeMenu), 0);
+
+  document.body.appendChild(menu);
+}
+
+function addSubfolderAction(parentPath: string): void {
+  const name = prompt(`Enter folder name in "${parentPath}/":`, "new-folder");
+  if (!name || !name.trim()) return;
+
+  const folderName = parentPath + "/" + name.trim().replace(/\s+/g, "-").toLowerCase();
+  const keepFile = ".gitkeep";
+  const fileName = folderName + "/" + keepFile;
+
+  const newFile: FileTab = {
+    id: fileName,
+    name: fileName,
+    content: "",
+    language: "text",
+  };
+
+  const files = filesState.get();
+  filesState.set([...files, newFile]);
+  expandedFolders.add(folderName);
+
+  if (isReady()) {
+    createFileInVFS(fileName, "").catch((err) =>
+      console.warn("VFS create failed:", err),
+    );
+  }
+}
+
+// Tab context menu
+
+function showTabContextMenu(e: MouseEvent, fileId: string): void {
+  e.preventDefault();
+  document.querySelector(".tab-context-menu")?.remove();
+
+  const menu = document.createElement("div");
+  menu.className = "tab-context-menu";
+  menu.style.left = e.clientX + "px";
+  menu.style.top = e.clientY + "px";
+
+  const items = [
+    { label: "Close", icon: "fa-times", action: () => closeFileAction(fileId) },
+    { label: "Close Others", icon: "fa-times-circle", action: () => closeOthersAction(fileId) },
+    { label: "Close All", icon: "fa-trash", action: () => closeAllAction() },
+    { label: "Rename", icon: "fa-pencil", action: () => renameFileAction(fileId) },
+    { label: "Duplicate", icon: "fa-copy", action: () => duplicateFileAction(fileId) },
+  ];
+
+  for (const item of items) {
+    const el = document.createElement("div");
+    el.className = "context-menu-item";
+    el.innerHTML = `<i class="fas ${item.icon}"></i> ${item.label}`;
+    el.addEventListener("click", () => {
+      menu.remove();
+      item.action();
+    });
+    menu.appendChild(el);
+  }
+
+  const closeMenu = (ev: MouseEvent) => {
+    if (!menu.contains(ev.target as Node)) {
+      menu.remove();
+      document.removeEventListener("click", closeMenu);
+    }
+  };
+  setTimeout(() => document.addEventListener("click", closeMenu), 0);
+
+  document.body.appendChild(menu);
+}
+
+// Markdown-aware run code
+async function runCodeAction(): Promise<void> {
+  return runCode();
+}
+
 const actions = {
-  runCode,
+  runCode: runCodeAction,
   clearConsole,
   resetCode,
   formatCode,
   switchFile: switchFileAction,
   addFile: addFileAction,
+  addFolder: addFolderAction,
   closeFile: closeFileAction,
+  importFiles: importFilesAction,
+  renameFile: renameFileAction,
+  duplicateFile: duplicateFileAction,
+  closeOthers: closeOthersAction,
+  closeAll: closeAllAction,
   switchOutput,
   exportAsZip,
   copyAllConsole,
@@ -560,7 +1310,27 @@ document.addEventListener("DOMContentLoaded", async () => {
   initializeSplit();
   initializeLogFilters(document.querySelector(".output-tabs"));
   initializeConsole();
+  const termEl = document.getElementById("terminal") as HTMLElement | null;
+  if (termEl) {
+    createTerminal(termEl);
+  }
+  window.addEventListener("resize", () => {
+    fitTerminal();
+  });
+  window.addEventListener("message", (event) => {
+    if (event.origin !== location.origin) return;
+    if (event.data?.type !== "navigate") return;
+    const href = event.data.href as string;
+    if (!href) return;
+    const files = filesState.get();
+    const target = files.find((f) => f.name === href);
+    if (!target) return;
+    activeFileState.set(target.id);
+    switchToFile(target);
+    runCode().catch(console.error);
+  });
   addGlobalSearchShortcuts();
+  initializeMenuBar();
 
   const loadingEl = document.getElementById("loading") as HTMLDivElement | null;
   const errorEl = document.getElementById("error-message") as HTMLDivElement | null;
@@ -584,15 +1354,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   const formatBtn = document.querySelector(".btn-format") as HTMLButtonElement | null;
   if (formatBtn) bindEvent(formatBtn, "click", () => void actions.formatCode());
 
-  const resetBtn = document.querySelector(".btn-reset") as HTMLButtonElement | null;
-  if (resetBtn) bindEvent(resetBtn, "click", () => actions.resetCode());
-
-  const clearBtn = document.querySelector(".btn-clear") as HTMLButtonElement | null;
-  if (clearBtn) bindEvent(clearBtn, "click", () => actions.clearConsole());
-
-  const downloadBtn = document.querySelector(".btn-download") as HTMLButtonElement | null;
-  if (downloadBtn) bindEvent(downloadBtn, "click", () => void actions.exportAsZip());
-
   const autoRunBtn = document.querySelector(".btn-auto-run") as HTMLButtonElement | null;
   if (autoRunBtn) bindEvent(autoRunBtn, "click", () => toggleAutoRun());
 
@@ -601,6 +1362,18 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   const autoRunEl = document.getElementById("auto-run-status");
   if (autoRunEl) bindText(autoRunEl, autoRunText);
+
+  const previewOpenBtn = document.getElementById("preview-open-btn");
+  if (previewOpenBtn && previewEl) {
+    bindEvent(previewOpenBtn, "click", () => {
+      const src = previewEl.src;
+      if (src && src !== "about:blank") {
+        window.open(src, "_blank");
+      } else {
+        showError("Run code first to preview");
+      }
+    });
+  }
 
   if (fileTabsEl) {
     effect(() => {
@@ -625,7 +1398,19 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (id) actions.switchFile(id);
       }
     });
+
+    fileTabsEl.addEventListener("contextmenu", (e) => {
+      const target = e.target as HTMLElement;
+      const tabEl = target.closest(".file-tab") as HTMLElement | null;
+      if (tabEl && tabEl.dataset.file) {
+        showTabContextMenu(e, tabEl.dataset.file);
+      }
+    });
   }
+
+  const outputTerminalTabEl = document.querySelector(
+    '.output-tabs .tab[data-output="terminal"]',
+  ) as HTMLElement | null;
 
   if (outputPreviewTabEl) {
     effect(() => {
@@ -635,6 +1420,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (outputConsoleTabEl) {
     effect(() => {
       outputConsoleTabEl.className = consoleClass.get();
+    });
+  }
+  if (outputTerminalTabEl) {
+    effect(() => {
+      outputTerminalTabEl.className = terminalClass.get();
     });
   }
 
@@ -649,12 +1439,21 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
+  const termPanelEl = document.getElementById("terminal") as HTMLElement | null;
+
   effect(() => {
     const out = activeOutputState.get();
     if (previewEl)
       previewEl.className = out === "preview" ? "preview active" : "preview";
     if (consoleEl)
       consoleEl.className = out === "console" ? "console active" : "console";
+    if (termPanelEl)
+      termPanelEl.className = out === "terminal" ? "terminal-panel active" : "terminal-panel";
+  });
+  effect(() => {
+    if (activeOutputState.get() === "terminal") {
+      requestAnimationFrame(() => fitTerminal());
+    }
   });
 
   bindClass(bodyEl, bodyClass);
@@ -680,40 +1479,64 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     fileTreeEl.addEventListener("click", (e) => {
       const target = e.target as HTMLElement;
-      const item = target.closest(".file-tree-item") as HTMLElement | null;
-      if (item && item.dataset.file) {
-        actions.switchFile(item.dataset.file);
+      const fileItem = target.closest(".file-tree-item") as HTMLElement | null;
+      const folder = !fileItem ? target.closest(".file-tree-folder") as HTMLElement | null : null;
+
+      if (fileItem && fileItem.dataset.file) {
+        actions.switchFile(fileItem.dataset.file);
+      } else if (folder) {
+        const path = folder.dataset.folder;
+        if (!path) return;
+        if (expandedFolders.has(path)) {
+          expandedFolders.delete(path);
+        } else {
+          expandedFolders.add(path);
+        }
+        renderFileTree(fileTreeEl);
       }
     });
 
     fileTreeEl.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       const target = e.target as HTMLElement;
-      const item = target.closest(".file-tree-item") as HTMLElement | null;
-      if (!item || !item.dataset.file) return;
+      const fileItem = target.closest(".file-tree-item") as HTMLElement | null;
+      const folder = target.closest(".file-tree-folder") as HTMLElement | null;
 
-      const fileName = item.dataset.file;
-      const action = prompt(
-        `Actions for ${fileName}:\nType "rename" or "delete":`,
-      );
-      if (action === "rename") {
-        const newName = prompt("New name:", fileName);
-        if (newName && newName.trim() && newName.trim() !== fileName) {
-          import("./vfs").then((vfs) =>
-            vfs.renameFileInVFS(fileName, newName.trim()),
-          );
-        }
-      } else if (action === "delete") {
-        actions.closeFile(fileName);
+      if (fileItem && fileItem.dataset.file) {
+        showTabContextMenu(e, fileItem.dataset.file);
+      } else if (folder) {
+        const folderPath = folder.dataset.folder;
+        if (!folderPath) return;
+        showFolderContextMenu(e, folderPath);
       }
     });
   }
 
-  // Sidebar new file button
+  // Sidebar file buttons
 
   const newFileBtn = document.getElementById("sidebar-new-btn");
   if (newFileBtn) {
     bindEvent(newFileBtn, "click", () => actions.addFile());
+  }
+
+  const folderBtn = document.getElementById("sidebar-folder-btn");
+  if (folderBtn) {
+    bindEvent(folderBtn, "click", () => actions.addFolder());
+  }
+
+  const importBtn = document.getElementById("sidebar-import-btn");
+  if (importBtn) {
+    bindEvent(importBtn, "click", () => actions.importFiles());
+  }
+
+  // Cursor position
+
+  const cursorEl = document.getElementById("cursor-position");
+  if (cursorEl) {
+    effect(() => {
+      const pos = cursorPos.get();
+      cursorEl.textContent = `Ln ${pos.line}, Col ${pos.col}`;
+    });
   }
 
   // Git commit button
@@ -727,7 +1550,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   setInterval(() => {
     if (isReady()) {
-      refreshGitStatus().catch(() => {});
+      refreshGitStatus().catch((err) => console.warn("Git status refresh failed:", err));
     }
   }, 5000);
 
@@ -740,7 +1563,4 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  formatCode().catch((error) => {
-    showError(`Error formatting code: ${error.message}`);
-  });
 });

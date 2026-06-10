@@ -1,3 +1,4 @@
+import { markdown } from "@codemirror/lang-markdown";
 import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
 import { defaultKeymap, toggleComment, history, undo, redo } from "@codemirror/commands";
@@ -11,7 +12,7 @@ import { lintWithBiome } from "./biome";
 import { search } from "@codemirror/search";
 import { monokai } from "@uiw/codemirror-theme-monokai";
 import { bbedit } from "@uiw/codemirror-theme-bbedit";
-import type { CodeMirrorEditor, FileTab } from "./types";
+import type { FileTab } from "./types";
 import { runCode } from "./runner";
 import { debounce } from "./utils";
 import {
@@ -19,6 +20,7 @@ import {
   darkModeState,
   filesState,
   activeFileState,
+  cursorPos,
 } from "./appState";
 import { effect } from "@nisoku/sairin";
 
@@ -44,6 +46,9 @@ function getLanguageExtension(fileName: string) {
     case "ts":
     case "tsx":
       return javascript();
+    case "md":
+    case "markdown":
+      return markdown();
     default:
       return javascript();
   }
@@ -79,8 +84,7 @@ export function createEditor(container: HTMLElement, initialFile: FileTab): void
           try {
             const biomeDiags = await lintWithBiome(text, fileName);
             return biomeDiags || [];
-          } catch (err) {
-            console.error("Biome linting failed:", err);
+          } catch {
             return [];
           }
         }),
@@ -116,6 +120,11 @@ export function createEditor(container: HTMLElement, initialFile: FileTab): void
               f.id === activeId ? { ...f, content } : f,
             );
             filesState.set(updated);
+          }
+          if (update.selectionSet || update.docChanged) {
+            const pos = view.state.selection.main.head;
+            const line = view.state.doc.lineAt(pos);
+            cursorPos.set({ line: line.number, col: pos - line.from + 1 });
           }
         }),
       ],

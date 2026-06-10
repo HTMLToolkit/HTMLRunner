@@ -5,7 +5,7 @@ import {
   errorMessage,
   loadingVisible,
 } from "./appState";
-import { editor, setAutoRun, setDarkMode } from "./editor";
+import { setAutoRun, setDarkMode } from "./editor";
 
 export function showLoading(): void {
   loadingVisible.set(true);

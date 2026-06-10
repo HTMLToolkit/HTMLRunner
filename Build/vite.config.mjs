@@ -49,8 +49,12 @@ export default defineConfig(({ mode }) => {
     plugins: [
       !isSingleFile &&
         VitePWA({
+          strategies: 'injectManifest',
+          srcDir: 'src',
+          filename: 'sw.ts',
           registerType: 'autoUpdate',
           includeAssets: ['robots.txt'],
+
           manifest: {
             name: 'HTMLRunner',
             short_name: 'HTMLRunner',
@@ -64,20 +68,10 @@ export default defineConfig(({ mode }) => {
             preset: 'minimal-2023',
             includeHtmlHeadLinks: true,
           },
-          workbox: {
+          injectManifest: {
             globPatterns: ['**/*.{js,css,html,png,ico,json}'],
-            runtimeCaching: [
-              {
-                urlPattern: /.*\.(js|css|html)$/,
-                handler: 'NetworkFirst',
-                options: { cacheName: 'app-shell' },
-              },
-              {
-                urlPattern: /.*\.(png|ico|json)$/,
-                handler: 'CacheFirst',
-                options: { cacheName: 'assets' },
-              },
-            ],
+            rollupFormat: 'iife',
+            maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
           },
         }),
       isSingleFile && viteSingleFile(),

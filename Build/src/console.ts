@@ -38,8 +38,7 @@ function renderConsoleEntries(entries: ConsoleMessage[]): void {
       });
     }
 
-    // stack rendering (same logic as before)
-    const maybeStack = ev.data[1];
+    const maybeStack = ev.data.length > 1 ? ev.data[1] : undefined;
     if (
       maybeStack &&
       typeof maybeStack === "object" &&
@@ -111,24 +110,29 @@ effect(() => {
   renderConsoleEntries(entries);
 });
 
-// Console interceptor code that will be injected into the preview iframe
 export const consoleInterceptor = `
-    const originalConsole = { log: console.log, error: console.error, warn: console.warn, info: console.info };
-    function sendToConsole(level, ...args) {
-        window.parent.postMessage({ type: 'console', level, data: args, timestamp: new Date().toISOString() }, '*');
-        originalConsole[level].apply(console, args);
-    }
-    console.log = (...args) => sendToConsole('log', ...args);
-    console.error = (...args) => sendToConsole('error', ...args);
-    console.warn = (...args) => sendToConsole('warn', ...args);
-    console.info = (...args) => sendToConsole('info', ...args);
-    window.onerror = (message, source, lineno, colno, error) => {
-        sendToConsole('error', error || message, { stack: error?.stack });
-        return true;
-    };
-    window.onunhandledrejection = (event) => {
-        sendToConsole('error', event.reason, { stack: event.reason?.stack });
-    };
+const _orig={log:console.log,error:console.error,warn:console.warn,info:console.info};
+function _send(l,...a){
+  try{window.parent.postMessage({type:'console',level:l,data:a,timestamp:new Date().toISOString()},location.origin)}catch{}
+  _orig[l].apply(console,a)
+}
+console.log=(...a)=>_send('log',...a);
+console.error=(...a)=>_send('error',...a);
+console.warn=(...a)=>_send('warn',...a);
+console.info=(...a)=>_send('info',...a);
+window.onerror=(m,s,l,c,e)=>{_send('error',e||m,{stack:e?.stack});return true};
+window.onunhandledrejection=e=>{_send('error',e.reason,{stack:e.reason?.stack})};
+`;
+
+export const navigationInterceptor = `
+document.addEventListener('click', function(e) {
+  var link = e.target.closest('a');
+  if (!link || link.getAttribute('target') === '_blank') return;
+  var href = link.getAttribute('href');
+  if (!href || href.startsWith('#') || href.startsWith('http://') || href.startsWith('https://') || href.startsWith('mailto:')) return;
+  e.preventDefault();
+  window.parent.postMessage({type:'navigate',href:href},location.origin);
+});
 `;
 
 // Initialize console message handler
@@ -140,11 +144,10 @@ export function initializeConsole(): void {
   window.addEventListener("message", handleConsoleMessage);
 }
 function handleConsoleMessage(event: MessageEvent<ConsoleMessage>): void {
-  if (event.data.type === "console") {
-    // Append to signal list
-    const prev = consoleEntries.get();
-    consoleEntries.set([...prev, event.data]);
-  }
+  if (event.origin !== location.origin) return;
+  if (event.data?.type !== "console") return;
+  const prev = consoleEntries.get();
+  consoleEntries.set([...prev, event.data]);
 }
 
 function renderObject(
@@ -177,16 +180,6 @@ function renderObject(
   visited.add(asObj as object);
 
   const container = document.createElement("span");
-  if (obj instanceof Error) {
-    const errorEl = document.createElement("span");
-    errorEl.className = "console-error";
-    errorEl.textContent = `${obj.name}: ${obj.message}`;
-    if (obj.stack)
-      errorEl.textContent += `\n${obj.stack.split("\n").slice(1).join("\n")}`;
-    container.appendChild(errorEl);
-    return container;
-  }
-
   const preview = document.createElement("span");
   preview.className = "console-object";
   preview.textContent = Array.isArray(asObj)
