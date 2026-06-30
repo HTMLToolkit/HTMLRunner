@@ -13,7 +13,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@babel/core": "^7.29.0",
+    "@babel/core": "^7.29.6",
     "@babel/parser": "^7.29.3",
     "@babel/runtime": "^7.29.2",
     "@codemirror/commands": "^6.10.3",
