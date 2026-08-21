@@ -1,7 +1,6 @@
 import { Buffer } from "buffer";
 globalThis.Buffer = Buffer;
 
-import "@fortawesome/fontawesome-free/css/all.min.css";
 import { createEditor, switchToFile, editor } from "./editor";
 import {
   openSearchPanel,
@@ -49,26 +48,9 @@ import {
 } from "@nisoku/sairin";
 import type { FileTab } from "./types";
 import { getTemplateForExt, getLanguageForExt } from "./defaultContent";
-import {
-  initializeVFS,
-  isReady,
-  syncFilesDebounced,
-  syncFilesToVFS,
-  createFileInVFS,
-  deleteFileInVFS,
-  renameFileInVFS,
-  gitCommit,
-  gitStatus,
-  gitDiff,
-  gitLog,
-  gitPush,
-  gitPull,
-  gitClone,
-  gitGetRemotes,
-  gitAddRemote,
-  gitRemoveRemote,
-} from "./vfs";
-import type { GitFileStatus } from "./vfs";
+import { getContainer, isContainerReady, getVFS } from "./container";
+import { initGitService, isGitReady, gitClone, gitCommit, gitStatus, gitLog, gitDiff, gitPush, gitPull, syncAllFilesToWorker, requestFilesFromWorker, syncFileToWorker } from "./git-service";
+import { initBridge, syncFilesDebounced, syncActiveFileToVFS } from "./vfs-bridge";
 import GitWorker from "./git.worker?worker&inline";
 
 let splitInstance: Split.Instance;
@@ -152,7 +134,7 @@ window.addEventListener("beforeunload", () => {
     splitInstance.destroy();
   }
   const files = filesState.get();
-  syncFilesToVFS(files).catch(() => {});
+  syncAllFilesToWorker();
 });
 
 function addGlobalSearchShortcuts() {
@@ -299,11 +281,8 @@ function toggleSidebar(): void {
 
 async function showGitStatus(): Promise<void> {
   try {
-    const statuses = await gitStatus();
-    const msg = statuses.length === 0
-      ? "No changes (clean working tree)"
-      : statuses.map((s) => `  ${s.short}  ${s.filepath}`).join("\n");
-    showInfoDialog("Git Status", msg);
+    const output = await gitStatus();
+    showInfoDialog("Git Status", output || "No changes (clean working tree)");
   } catch {
     showError("Failed to get git status");
   }
@@ -325,14 +304,11 @@ async function showGitDiff(): Promise<void> {
 async function showGitLog(): Promise<void> {
   try {
     const log = await gitLog();
-    if (log.length === 0) {
+    if (!log || log.trim().length === 0) {
       showInfoDialog("Git Log", "No commits yet.");
       return;
     }
-    const msg = log.map((c) =>
-      `${c.oid.slice(0, 7)}  ${new Date(c.date).toLocaleDateString()}  ${c.author}\n      ${c.message}`
-    ).join("\n");
-    showInfoDialog("Git Log", msg);
+    showInfoDialog("Git Log", log);
   } catch {
     showError("Failed to get git log");
   }
@@ -376,7 +352,7 @@ function showInfoDialog(title: string, body: string): void {
 function showAbout(): void {
   showInfoDialog(
     "About HTMLRunner",
-    `HTMLRunner v1.2.0\n\nA browser-based HTML/CSS/JavaScript code editor\nwith live preview, console, and git integration.\n\nBuilt with:\n  - CodeMirror 6\n  - Vite\n  - isomorphic-git\n  - ZenFS\n  - Biome\n  - Prettier\n\nhttps://htmltoolkit.github.io/HTMLRunner/`
+    `HTMLRunner v2.0.0\n\nA browser-based HTML/CSS/JavaScript code editor\nwith live preview, console, and git integration.\n\nBuilt with:\n  - CodeMirror 6\n  - Vite\n  - almostnode (Node.js runtime)\n  - wasm-git (libgit2 WASM)\n  - ZenFS\n  - Biome\n  - Prettier\n\nhttps://htmltoolkit.github.io/HTMLRunner/`
   );
 }
 
@@ -500,13 +476,7 @@ function initializeLogFilters(outputTabsEl?: Element | null): void {
       const set = new Set(prev);
       if (set.has(type)) set.delete(type);
       else set.add(type);
-      const arr = Array.from(set);
-      logFilters.set(arr);
-      try {
-        localStorage.setItem("logFilters", JSON.stringify(arr));
-      } catch (e) {
-        console.error("Failed to save log filters to localStorage:", e);
-      }
+      logFilters.set(Array.from(set));
     });
 
     filtersDiv.appendChild(button);
@@ -748,27 +718,20 @@ function renderFileTree(container: HTMLElement): void {
 
 // Git indicator overlay
 
-function renderGitStatus(container: HTMLElement, statuses: GitFileStatus[]): void {
+function renderGitStatus(container: HTMLElement, statusText: string): void {
   container.innerHTML = "";
-  if (statuses.length === 0) {
+  if (!statusText || statusText.includes("nothing to commit")) {
     container.innerHTML = '<span class="git-status-empty">No changes</span>';
     return;
   }
-
-  for (const s of statuses) {
+  const lines = statusText.split("\n").filter((l) => l.trim());
+  for (const line of lines) {
     const item = document.createElement("div");
     item.className = "git-status-item";
-
-    const badge = document.createElement("span");
-    badge.className = `git-badge git-badge-${s.short.toLowerCase()}`;
-    badge.textContent = s.short;
-    item.appendChild(badge);
-
     const name = document.createElement("span");
     name.className = "git-status-filename";
-    name.textContent = s.filepath;
+    name.textContent = line;
     item.appendChild(name);
-
     container.appendChild(item);
   }
 }
@@ -804,10 +767,8 @@ function addFileAction(): void {
   const file = filesState.get().find((f) => f.id === newFile.id);
   if (file) switchToFile(file);
 
-  if (isReady()) {
-    createFileInVFS(fileName, template).catch((err) =>
-      console.warn("VFS create failed:", err),
-    );
+  if (isGitReady()) {
+    syncFileToWorker(fileName, template);
   }
 }
 
@@ -829,10 +790,8 @@ function closeFileAction(id: string): void {
   }
 
   const file = files.find((f) => f.id === id);
-  if (file && isReady()) {
-    deleteFileInVFS(file.name).catch((err) =>
-      console.warn("VFS delete failed:", err),
-    );
+  if (file && isGitReady()) {
+    // Worker handles deletion via git
   }
 }
 
@@ -840,6 +799,7 @@ async function commitAction(): Promise<void> {
   const msg = prompt("Commit message:", "Update files");
   if (!msg || !msg.trim()) return;
   try {
+    await syncAllFilesToWorker();
     const sha = await gitCommit(msg.trim());
     showError(`Committed: ${sha.slice(0, 7)}`);
     await refreshGitStatus();
@@ -853,33 +813,19 @@ async function refreshGitStatus(): Promise<void> {
   const statusEl = document.getElementById("git-status");
   if (!statusEl) return;
   try {
-    const statuses = await gitStatus();
-    renderGitStatus(statusEl, statuses);
+    const output = await gitStatus();
+    renderGitStatus(statusEl, output);
   } catch {
     // VFS not ready yet
   }
 }
 
 async function pushAction(): Promise<void> {
-  const remotes = await gitGetRemotes();
-  let remote = "origin";
-  if (remotes.length === 0) {
-    const url = prompt("No remotes configured. Enter remote URL:");
-    if (!url) return;
-    await gitAddRemote("origin", url);
-  } else if (remotes.length > 1) {
-    const msg = remotes.map((r, i) => `${i + 1}. ${r.remote} → ${r.url}`).join("\n");
-    const choice = prompt(`Select remote (1-${remotes.length}):\n${msg}`);
-    if (!choice) return;
-    const idx = parseInt(choice, 10) - 1;
-    if (idx >= 0 && idx < remotes.length) remote = remotes[idx].remote;
-  } else {
-    remote = remotes[0].remote;
-  }
-
+  const remote = prompt("Remote name:", "origin") || "origin";
   const ref = prompt("Branch to push:", "main") || "main";
   try {
     showLoading();
+    await syncAllFilesToWorker();
     await gitPush(remote, ref);
     showError(`Pushed to ${remote}/${ref}`);
   } catch (err) {
@@ -891,24 +837,16 @@ async function pushAction(): Promise<void> {
 }
 
 async function pullAction(): Promise<void> {
-  const remotes = await gitGetRemotes();
-  if (remotes.length === 0) {
-    showError("No remotes configured");
-    return;
-  }
+  const remote = prompt("Remote name:", "origin") || "origin";
   const ref = prompt("Branch to pull:", "main") || "main";
   try {
     showLoading();
-    await gitPull(remotes[0].remote, ref);
-    showError(`Pulled from ${remotes[0].remote}/${ref}`);
+    await gitPull(remote, ref);
+    showError(`Pulled from ${remote}/${ref}`);
     await refreshGitStatus();
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes("MissingNameError") || msg.includes("author")) {
-      showError("Git author not configured. Make a commit first to set author info.");
-    } else {
-      showError(`Pull failed: ${msg}`);
-    }
+    showError(`Pull failed: ${msg}`);
   } finally {
     hideLoading();
   }
@@ -924,11 +862,7 @@ async function cloneAction(): Promise<void> {
     await refreshGitStatus();
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes("AlreadyExistsError") || msg.includes("already exists")) {
-      showError("Clone failed: repository already exists. Reset or use a different directory.");
-    } else {
-      showError(`Clone failed: ${msg}`);
-    }
+    showError(`Clone failed: ${msg}`);
   } finally {
     hideLoading();
   }
@@ -981,10 +915,8 @@ function renameFileAction(id: string): void {
   if (activeFileState.get() === id) {
     activeFileState.set(trimmed);
   }
-  if (isReady()) {
-    renameFileInVFS(file.name, trimmed).catch((err) =>
-      console.warn("VFS rename failed:", err),
-    );
+  if (isGitReady()) {
+    syncFileToWorker(trimmed, file.content);
   }
 }
 
@@ -1018,10 +950,8 @@ function duplicateFileAction(id: string): void {
   activeFileState.set(newName);
   const tab = filesState.get().find((f) => f.id === newName);
   if (tab) switchToFile(tab);
-  if (isReady()) {
-    createFileInVFS(newName, file.content).catch((err) =>
-      console.warn("VFS create failed:", err),
-    );
+  if (isGitReady()) {
+    syncFileToWorker(newName, file.content);
   }
 }
 
@@ -1033,9 +963,9 @@ function closeOthersAction(id: string): void {
   filesState.set(kept);
   activeFileState.set(id);
   switchToFile(kept[0]);
-  if (isReady()) {
+  if (isGitReady()) {
     for (const f of removed) {
-      deleteFileInVFS(f.name).catch(() => {});
+      // Worker handles file deletion
     }
   }
 }
@@ -1048,9 +978,9 @@ function closeAllAction(): void {
   filesState.set([kept]);
   activeFileState.set(kept.id);
   switchToFile(kept);
-  if (isReady()) {
+  if (isGitReady()) {
     for (const f of removed) {
-      deleteFileInVFS(f.name).catch(() => {});
+      // Worker handles file deletion
     }
   }
 }
@@ -1078,10 +1008,8 @@ function addFileInFolder(folderPath: string): void {
   const file = filesState.get().find((f) => f.id === newFile.id);
   if (file) switchToFile(file);
 
-  if (isReady()) {
-    createFileInVFS(fileName, template).catch((err) =>
-      console.warn("VFS create failed:", err),
-    );
+  if (isGitReady()) {
+    syncFileToWorker(fileName, template);
   }
 }
 
@@ -1105,10 +1033,8 @@ function addFolderAction(): void {
 
   expandedFolders.add(folderName);
 
-  if (isReady()) {
-    createFileInVFS(fileName, "").catch((err) =>
-      console.warn("VFS create failed:", err),
-    );
+  if (isGitReady()) {
+    syncFileToWorker(fileName, "");
   }
 }
 
@@ -1196,10 +1122,8 @@ function addSubfolderAction(parentPath: string): void {
   filesState.set([...files, newFile]);
   expandedFolders.add(folderName);
 
-  if (isReady()) {
-    createFileInVFS(fileName, "").catch((err) =>
-      console.warn("VFS create failed:", err),
-    );
+  if (isGitReady()) {
+    syncFileToWorker(fileName, "");
   }
 }
 
@@ -1286,7 +1210,8 @@ globalActions.set({ ...prevActions, undo: undoAction, redo: redoAction });
 
 document.addEventListener("DOMContentLoaded", async () => {
   const worker = new GitWorker();
-  await initializeVFS(worker);
+  initGitService(worker);
+  initBridge();
 
   const editorContainer = document.getElementById("editor-container");
   if (!editorContainer) {
@@ -1549,7 +1474,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Auto-refresh git status periodically
 
   setInterval(() => {
-    if (isReady()) {
+    if (isGitReady()) {
       refreshGitStatus().catch((err) => console.warn("Git status refresh failed:", err));
     }
   }, 5000);
@@ -1558,7 +1483,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   effect(() => {
     const files = filesState.get();
-    if (isReady()) {
+    if (isGitReady()) {
       syncFilesDebounced(files);
     }
   });

@@ -2,9 +2,40 @@ import { consoleInterceptor, navigationInterceptor } from "./console";
 import { showLoading, showError, hideLoading, switchOutput } from "./ui";
 import { clearConsole, logConsoleError } from "./console";
 import { filesState, activeFileState } from "./appState";
+import { getVFS, isContainerReady } from "./container";
+import { marked } from "marked";
 import type { FileTab } from "./types";
 
-// Markdown preview renderer
+let devServer: any = null;
+let serverBridge: any = null;
+let previewReady = false;
+
+async function ensureDevServer(): Promise<boolean> {
+  if (devServer && previewReady) return true;
+  if (!isContainerReady()) return false;
+
+  try {
+    const { ViteDevServer, getServerBridge } = await import("almostnode");
+    const vfs = getVFS();
+
+    if (!serverBridge) {
+      serverBridge = getServerBridge();
+      await serverBridge.initServiceWorker();
+    }
+
+    if (!devServer) {
+      devServer = new ViteDevServer(vfs, { port: 3000, root: "/sandbox" });
+      serverBridge.registerServer(devServer, 3000);
+      devServer.start();
+      previewReady = true;
+    }
+
+    return true;
+  } catch (err) {
+    console.error("Failed to start dev server:", err);
+    return false;
+  }
+}
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -21,122 +52,21 @@ function safeUrl(url: string): string {
   }
 }
 
-function inlineMarkdown(s: string): string {
-  const escaped = s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-  return escaped
-    .replace(/`([^`]+)`/g, "<code>$1</code>")
-    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*([^*]+)\*/g, "<em>$1</em>")
-    .replace(/~~([^~]+)~~/g, "<del>$1</del>")
-    .replace(
-      /\[([^\]]+)\]\(([^)]+)\)/g,
-      (_m, text: string, url: string) =>
-        `<a href="${safeUrl(url)}" target="_blank" rel="noopener noreferrer">${text}</a>`,
-    )
-    .replace(
-      /!\[([^\]]*)\]\(([^)]+)\)/g,
-      (_m, alt: string, url: string) =>
-        `<img src="${safeUrl(url)}" alt="${alt}" loading="lazy">`,
-    );
-}
+marked.use({
+  renderer: {
+    link({ href, title, text }) {
+      const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
+      return `<a href="${safeUrl(href || "")}" target="_blank" rel="noopener noreferrer"${titleAttr}>${text}</a>`;
+    },
+    image({ href, title, text }) {
+      const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
+      return `<img src="${safeUrl(href || "")}" alt="${escapeHtml(text || "")}" loading="lazy"${titleAttr}>`;
+    },
+  },
+});
 
 export function renderMarkdownPreview(md: string): string {
-  const lines = md.split("\n");
-  const html: string[] = ['<div class="md-preview">'];
-  let inCodeBlock = false;
-  let codeContent = "";
-  let codeLang = "";
-  let inParagraph = false;
-
-  function flushParagraph() {
-    if (inParagraph) { html.push("</p>"); inParagraph = false; }
-  }
-  function startParagraph() {
-    if (!inParagraph) { html.push("<p>"); inParagraph = true; }
-  }
-
-  for (const raw of lines) {
-    const line = raw;
-
-    if (line.startsWith("```")) {
-      if (inCodeBlock) {
-        flushParagraph();
-        html.push(`<pre><code class="language-${codeLang}">${escapeHtml(codeContent.trimEnd())}</code></pre>`);
-        codeContent = "";
-        codeLang = "";
-        inCodeBlock = false;
-      } else {
-        flushParagraph();
-        inCodeBlock = true;
-        codeLang = line.slice(3).trim();
-      }
-      continue;
-    }
-
-    if (inCodeBlock) {
-      codeContent += line + "\n";
-      continue;
-    }
-
-    if (line === "") {
-      flushParagraph();
-      continue;
-    }
-
-    // Headers
-    const hMatch = line.match(/^(#{1,6})\s+(.+)/);
-    if (hMatch) {
-      flushParagraph();
-      const level = hMatch[1].length;
-      html.push(`<h${level}>${inlineMarkdown(hMatch[2])}</h${level}>`);
-      continue;
-    }
-
-    // HR
-    if (/^[-*_]{3,}\s*$/.test(line)) {
-      flushParagraph();
-      html.push("<hr>");
-      continue;
-    }
-
-    // Unordered list
-    const ulMatch = line.match(/^(\s*)[-*+]\s+(.+)/);
-    if (ulMatch) {
-      flushParagraph();
-      html.push(`<li>${inlineMarkdown(ulMatch[2])}</li>`);
-      continue;
-    }
-
-    // Ordered list
-    const olMatch = line.match(/^(\s*)\d+\.\s+(.+)/);
-    if (olMatch) {
-      flushParagraph();
-      html.push(`<li>${inlineMarkdown(olMatch[2])}</li>`);
-      continue;
-    }
-
-    // Blockquote
-    const bqMatch = line.match(/^>\s?(.*)/);
-    if (bqMatch) {
-      flushParagraph();
-      html.push(`<blockquote>${inlineMarkdown(bqMatch[1])}</blockquote>`);
-      continue;
-    }
-
-    startParagraph();
-    html.push(line ? inlineMarkdown(line) + " " : "<br>");
-  }
-
-  flushParagraph();
-  if (inCodeBlock) {
-    html.push(`<pre><code class="language-${codeLang}">${escapeHtml(codeContent.trimEnd())}</code></pre>`);
-  }
-
-  html.push("</div>");
-  return html.join("\n");
+  return `<div class="md-preview">${marked.parse(md) as string}</div>`;
 }
 
 let prevMdBlobUrl: string | null = null;
@@ -214,171 +144,81 @@ async function loadPrettierBundle(): Promise<PrettierBundle> {
   return prettierBundlePromise;
 }
 
-const MIME: Record<string, string> = {
-  html: "text/html; charset=utf-8",
-  htm: "text/html; charset=utf-8",
-  css: "text/css; charset=utf-8",
-  js: "application/javascript; charset=utf-8",
-  mjs: "application/javascript; charset=utf-8",
-  cjs: "application/javascript; charset=utf-8",
-  json: "application/json; charset=utf-8",
-  svg: "image/svg+xml",
-  png: "image/png",
-  ico: "image/x-icon",
-  wasm: "application/wasm",
-};
-
-function mimeType(name: string): string {
-  const ext = name.split(".").pop()?.toLowerCase() ?? "";
-  return MIME[ext] ?? "text/plain; charset=utf-8";
-}
-
-const SANDBOX_CACHE = "sandbox-v1";
-const SANDBOX_BASE = (() => {
-  const base = new URL("./sandbox/", location.href).href;
-  return base.endsWith("/") ? base : base + "/";
-})();
-
-async function populateSandboxCache(files: FileTab[]): Promise<string> {
-  const cache = await caches.open(SANDBOX_CACHE);
-  const oldKeys = await cache.keys();
-  await Promise.all(oldKeys.map((r) => cache.delete(r)));
-
-  for (const file of files) {
-    const url = SANDBOX_BASE + file.name;
-    const resp = new Response(file.content, {
-      headers: { "Content-Type": mimeType(file.name) },
-    });
-    cache.put(url, resp);
-  }
-
-  const html = generatePreviewHtml(files);
-  const htmlUrl = SANDBOX_BASE + "index.html";
-  const htmlResp = new Response(html, {
-    headers: { "Content-Type": "text/html; charset=utf-8" },
-  });
-  cache.put(htmlUrl, htmlResp);
-  return htmlUrl;
-}
-
-function generatePreviewHtml(files: FileTab[]): string {
-  const htmlFile = files.find((f) => /\.html?$/i.test(f.name));
-  const cssFiles = files.filter((f) => /\.css$/i.test(f.name));
-  const jsFiles = files.filter((f) => /\.m?js$/i.test(f.name));
-
-  const rawHtml = htmlFile?.content ?? "";
-  const hasDocTag = /<html[\s>/]|<!doctype\s+html/i.test(rawHtml);
-
-  if (hasDocTag) {
-    return injectIntoFullHtml(rawHtml, cssFiles, jsFiles);
-  }
-
-  return buildStandaloneHtml(rawHtml, cssFiles, jsFiles);
-}
-
-function buildStandaloneHtml(
-  bodyHtml: string,
-  cssFiles: FileTab[],
-  jsFiles: FileTab[],
-): string {
-  const lines: string[] = [
-    "<!DOCTYPE html>",
-    '<html lang="en">',
-    "<head>",
-    '<meta charset="UTF-8">',
-    '<meta name="viewport" content="width=device-width, initial-scale=1.0">',
-    `<script>${consoleInterceptor}${navigationInterceptor}</script>`,
-  ];
-
-  for (const css of cssFiles) {
-    if (css.content.trim()) {
-      lines.push(`<link rel="stylesheet" href="${css.name}">`);
+export async function runCode(): Promise<void> {
+  showLoading();
+  try {
+    clearConsole();
+    const files = filesState.get();
+    if (files.length === 0) {
+      hideLoading();
+      return;
     }
-  }
 
-  lines.push("</head>", "<body>");
-
-  if (bodyHtml.trim()) {
-    lines.push(bodyHtml);
-  }
-
-  for (const js of jsFiles) {
-    if (js.content.trim()) {
-      lines.push(`<script src="${js.name}"></script>`);
-    }
-  }
-
-  lines.push("</body>", "</html>");
-  return lines.join("\n");
-}
-
-function injectIntoFullHtml(
-  html: string,
-  cssFiles: FileTab[],
-  jsFiles: FileTab[],
-): string {
-  let result = html;
-
-  const hasInterceptor = result.includes(consoleInterceptor);
-  if (!hasInterceptor) {
-    const interceptorTag = `<script>${consoleInterceptor}${navigationInterceptor}</script>`;
-    const headMatch = result.match(/(<\/head\s*>)/i);
-    if (headMatch) {
-      result =
-        result.slice(0, headMatch.index) +
-        interceptorTag + "\n" +
-        result.slice(headMatch.index);
-    } else {
-      const htmlMatch = result.match(/(<\/html\s*>)/i);
-      if (htmlMatch) {
-        result =
-          result.slice(0, htmlMatch.index) +
-          interceptorTag + "\n" +
-          result.slice(htmlMatch.index);
-      } else {
-        result = interceptorTag + "\n" + result;
+    const js = files.find((f) => /\.m?js$/i.test(f.name))?.content ?? "";
+    if (js.trim()) {
+      try {
+        new Function(js);
+      } catch (syntaxError: unknown) {
+        const msg = syntaxError instanceof Error ? syntaxError.message : String(syntaxError);
+        logConsoleError(`SyntaxError: ${msg}`);
+        hideLoading();
+        return;
       }
     }
-  }
 
-  for (const css of cssFiles) {
-    if (!css.content.trim()) continue;
-    const cssLink = `<link rel="stylesheet" href="${css.name}">`;
-    if (!result.includes(css.name)) {
-      result = result.replace(
-        /(<\/head\s*>)/i,
-        `${cssLink}\n$1`,
-      );
+    const activeId = activeFileState.get();
+    const activeFile = files.find((f) => f.id === activeId);
+    if (activeFile && /\.md$/i.test(activeFile.name)) {
+      renderMarkdownInPreview(activeFile.content);
+      switchOutput("preview");
+      return;
     }
-  }
 
-  for (const js of jsFiles) {
-    if (!js.content.trim()) continue;
-    const jsTag = `<script src="${js.name}"></script>`;
-    if (!result.includes(js.name)) {
-      result = result.replace(
-        /(<\/body\s*>)/i,
-        `${jsTag}\n$1`,
-      );
+    const preview = document.getElementById("preview") as HTMLIFrameElement | null;
+    if (!preview) throw new Error("Preview element not found");
+
+    const serverReady = await ensureDevServer();
+    if (serverReady && devServer) {
+      syncFilesToDevServer(files);
+      preview.src = `/__virtual__/3000/`;
+      preview.onload = () => {
+        try {
+          devServer.setHMRTarget(preview.contentWindow);
+        } catch {}
+      };
+    } else {
+      runBlobFallback(files, preview);
     }
-  }
 
-  return result;
+    switchOutput("preview");
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    showError(`Error running code: ${msg}`);
+  } finally {
+    hideLoading();
+  }
+}
+
+function syncFilesToDevServer(files: FileTab[]): void {
+  if (!devServer) return;
+  const vfs = getVFS();
+  for (const file of files) {
+    const dir = file.name.substring(0, file.name.lastIndexOf("/"));
+    if (dir) {
+      try { vfs.mkdirSync(`/sandbox/${dir}`, { recursive: true }); } catch {}
+    }
+    let content = file.content;
+    if (/\.html?$/i.test(file.name) && content.includes("<head")) {
+      const interceptScript = `<script>${consoleInterceptor}${navigationInterceptor}</script>`;
+      content = content.replace(/(<head[^>]*>)/i, `$1\n${interceptScript}`);
+    }
+    try { vfs.writeFileSync(`/sandbox/${file.name}`, content); } catch {}
+  }
 }
 
 function getPreview(): HTMLIFrameElement | null {
   const el = document.getElementById("preview");
   return el instanceof HTMLIFrameElement ? el : null;
-}
-
-async function ensureSW(): Promise<boolean> {
-  if (!("serviceWorker" in navigator) || !("caches" in window)) return false;
-  try {
-    await navigator.serviceWorker.ready;
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function inlineCssFiles(files: FileTab[]): string {
@@ -445,56 +285,6 @@ function injectBlobHtml(html: string, cssLinks: string, jsLinks: string): string
     ].filter(Boolean).join("");
   }
   return result;
-}
-
-export async function runCode(): Promise<void> {
-  showLoading();
-  try {
-    clearConsole();
-    const files = filesState.get();
-    if (files.length === 0) {
-      hideLoading();
-      return;
-    }
-
-    const js = files.find((f) => /\.m?js$/i.test(f.name))?.content ?? "";
-    if (js.trim()) {
-      try {
-        new Function(js);
-      } catch (syntaxError: unknown) {
-        const msg = syntaxError instanceof Error ? syntaxError.message : String(syntaxError);
-        logConsoleError(`SyntaxError: ${msg}`);
-        hideLoading();
-        return;
-      }
-    }
-
-    // Markdown: render preview directly
-    const activeId = activeFileState.get();
-    const activeFile = files.find((f) => f.id === activeId);
-    if (activeFile && /\.md$/i.test(activeFile.name)) {
-      renderMarkdownInPreview(activeFile.content);
-      switchOutput("preview");
-      return;
-    }
-
-    const preview = getPreview();
-    if (!preview) throw new Error("Preview element not found");
-
-    const swOk = await ensureSW();
-    if (swOk) {
-      preview.src = await populateSandboxCache(files);
-    } else {
-      runBlobFallback(files, preview);
-    }
-
-    switchOutput("preview");
-  } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : String(error);
-    showError(`Error running code: ${msg}`);
-  } finally {
-    hideLoading();
-  }
 }
 
 export async function formatCode(): Promise<void> {

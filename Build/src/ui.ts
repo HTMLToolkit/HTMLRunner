@@ -33,7 +33,3 @@ export function toggleDarkMode(): void {
   const newDarkMode = !darkModeState.get();
   setDarkMode(newDarkMode);
 }
-
-export function setPageDarkMode(value: boolean): void {
-  setDarkMode(value);
-}

@@ -12,8 +12,8 @@ import { lintWithBiome } from "./biome";
 import { search } from "@codemirror/search";
 import { monokai } from "@uiw/codemirror-theme-monokai";
 import { bbedit } from "@uiw/codemirror-theme-bbedit";
+import { indentationMarkers } from "@replit/codemirror-indentation-markers";
 import type { FileTab } from "./types";
-import { runCode } from "./runner";
 import { debounce } from "./utils";
 import {
   autoRunState,
@@ -21,6 +21,7 @@ import {
   filesState,
   activeFileState,
   cursorPos,
+  globalActions,
 } from "./appState";
 import { effect } from "@nisoku/sairin";
 
@@ -59,7 +60,7 @@ function getFileName(fileId: string, files: FileTab[]): string {
   return f?.name ?? "file.txt";
 }
 
-const debouncedRun = debounce(runCode, 250);
+const debouncedRun = debounce(() => { globalActions.get().runCode?.(); }, 250);
 const autoRunListener = EditorView.updateListener.of((update) => {
   if (update.docChanged) debouncedRun();
 });
@@ -100,6 +101,7 @@ export function createEditor(container: HTMLElement, initialFile: FileTab): void
         }),
         search(),
         autocompletion(),
+        indentationMarkers(),
         keymap.of([
           ...defaultKeymap,
           ...foldKeymap,
